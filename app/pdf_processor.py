@@ -3,6 +3,10 @@ PDF Processing Module for GovInsight
 
 This module handles PDF loading, text extraction, and cleaning
 for Indian government budget documents.
+
+NOTE: Metadata is NOT extracted from PDF content or filenames.
+All metadata must be manually configured in metadata_config.py
+to ensure consistent and reliable metadata for the RAG pipeline.
 """
 
 import os
@@ -87,31 +91,38 @@ class PDFProcessor:
     
     def _clean_text(self, text: str) -> str:
         """
-        Clean extracted text by removing headers, footers, and noise.
+        Clean extracted text while PRESERVING numerical data and budget figures.
+        
+        CRITICAL: Budget documents contain important numbers that must be preserved.
+        Only remove true noise and formatting artifacts.
         
         Args:
             text: Raw extracted text
             
         Returns:
-            Cleaned text
+            Cleaned text with numbers preserved
         """
-        # Remove excessive whitespace
+        # Remove excessive whitespace FIRST
         text = re.sub(r'\s+', ' ', text)
         
         # Remove common header/footer patterns
         text = self._remove_headers_footers(text)
         
-        # Remove page numbers (standalone numbers)
-        text = re.sub(r'\b\d{1,3}\b\s*$', '', text)
-        text = re.sub(r'^\s*\d{1,3}\b', '', text)
+        # ONLY remove "Page X" style page numbers (very selective)
+        # DO NOT remove standalone numbers - they could be budget figures!
+        text = re.sub(r'\bPage\s+\d+\b', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bpage\s+\d+\s+of\s+\d+\b', '', text, flags=re.IGNORECASE)
         
-        # Remove common noise patterns
-        text = re.sub(r'www\.\S+', '', text)  # Remove URLs
-        text = re.sub(r'\|{2,}', '', text)  # Remove multiple pipes
-        text = re.sub(r'-{3,}', '', text)  # Remove multiple dashes
-        text = re.sub(r'_{3,}', '', text)  # Remove multiple underscores
+        # Remove URLs (safe to remove)
+        text = re.sub(r'https?://\S+', '', text)
+        text = re.sub(r'www\.\S+', '', text)
         
-        # Normalize spacing
+        # Remove ONLY decorative elements (3+ repetitions for tables/borders)
+        text = re.sub(r'\|{3,}', '', text)  # 3+ pipes (table borders)
+        text = re.sub(r'-{5,}', '', text)   # 5+ dashes (horizontal lines)
+        text = re.sub(r'_{5,}', '', text)   # 5+ underscores (underlines)
+        
+        # Final whitespace normalization
         text = re.sub(r'\s+', ' ', text).strip()
         
         return text
@@ -142,96 +153,6 @@ class PDFProcessor:
             text = re.sub(pattern, '', text, flags=re.IGNORECASE)
         
         return text
-    
-    def extract_metadata_from_filename(self, filename: str) -> Dict[str, str]:
-        """
-        Extract metadata (year, ministry, type) from PDF filename.
-        
-        Expected filename patterns:
-        - Budget_2023-24_Expenditure.pdf
-        - MoRTH_Annual_Report_2022-23.pdf
-        - Demands_for_Grants_2024-25_Ministry_Name.pdf
-        
-        Args:
-            filename: PDF filename (without path)
-            
-        Returns:
-            Dictionary with extracted metadata
-        """
-        metadata = {
-            'year': None,
-            'ministry': None,
-            'document_type': None
-        }
-        
-        # Extract year (format: 2023-24 or 2023)
-        year_match = re.search(r'(\d{4})-?(\d{2,4})?', filename)
-        if year_match:
-            metadata['year'] = year_match.group(1) + '-' + year_match.group(2) if year_match.group(2) else year_match.group(1)
-        
-        # Extract ministry
-        ministry_patterns = [
-            r'MoRTH', r'Ministry.*?Transport', r'Road.*?Transport',
-            r'Housing', r'Urban.*?Affairs', r'Finance',
-            r'NITI.*?Aayog', r'Planning.*?Commission'
-        ]
-        for pattern in ministry_patterns:
-            match = re.search(pattern, filename, re.IGNORECASE)
-            if match:
-                metadata['ministry'] = match.group(0)
-                break
-        
-        # Extract document type
-        if 'expenditure' in filename.lower():
-            metadata['document_type'] = 'Expenditure Budget'
-        elif 'demand' in filename.lower():
-            metadata['document_type'] = 'Demands for Grants'
-        elif 'glance' in filename.lower():
-            metadata['document_type'] = 'Budget at a Glance'
-        elif 'annual' in filename.lower():
-            metadata['document_type'] = 'Annual Report'
-        
-        return metadata
-    
-    def process_all_pdfs(self) -> List[Dict[str, any]]:
-        """
-        Process all PDFs in the directory and extract text with metadata.
-        
-        Returns:
-            List of dictionaries containing text and metadata for all pages:
-            [
-                {
-                    'text': str,
-                    'page_number': int,
-                    'document_name': str,
-                    'year': str,
-                    'ministry': str,
-                    'document_type': str
-                }
-            ]
-        """
-        all_pages = []
-        pdf_files = self.load_pdfs()
-        
-        print(f"Processing {len(pdf_files)} PDF files...")
-        
-        for pdf_path in pdf_files:
-            print(f"Processing: {pdf_path.name}")
-            
-            # Extract text from PDF
-            pages_data = self.extract_text_from_pdf(pdf_path)
-            
-            # Extract metadata from filename
-            file_metadata = self.extract_metadata_from_filename(pdf_path.name)
-            
-            # Combine text and metadata
-            for page_data in pages_data:
-                page_data.update(file_metadata)
-                all_pages.append(page_data)
-        
-        print(f"Extracted {len(all_pages)} pages from {len(pdf_files)} documents")
-        
-        return all_pages
 
 
 def extract_text_from_single_pdf(pdf_path: str) -> List[Dict[str, any]]:
@@ -250,46 +171,57 @@ def extract_text_from_single_pdf(pdf_path: str) -> List[Dict[str, any]]:
 
 def chunk_text_with_metadata(
     pages_data: List[Dict[str, any]],
-    year: str,
-    ministry: str,
-    document_title: str,
-    scheme: str = None,
-    chunk_size: int = 400,
-    overlap: int = 50
+    metadata: Dict[str, str],
+    chunk_size: int = 1000,
+    overlap: int = 200
 ) -> List[Dict[str, any]]:
     """
-    Chunk extracted text into smaller segments with metadata enrichment.
+    Chunk extracted text into smaller segments with complete metadata.
     
-    This function splits page-level text into chunks of 300-500 characters
-    with 50-character overlap to preserve context across chunk boundaries.
+    This function splits page-level text into chunks of 800-1200 characters
+    with 200-character overlap to preserve context across chunk boundaries.
+    
+    All metadata is passed in directly (not extracted from content) to ensure
+    every chunk has complete and consistent metadata.
     
     Args:
         pages_data: List of page dictionaries from PDF extraction
-        year: Budget year (e.g., "2023-24")
-        ministry: Ministry name (e.g., "Ministry of Road Transport & Highways")
-        document_title: Title of source document
-        scheme: Optional scheme name (e.g., "Bharatmala Pariyojana")
-        chunk_size: Target chunk size in characters (default: 400)
-        overlap: Overlap size in characters (default: 50)
+        metadata: Complete metadata dictionary with all required fields:
+                  - year: Budget year (e.g., "2023-24")
+                  - ministry: Ministry name (e.g., "Ministry of Road Transport & Highways")
+                  - scheme: Scheme name (e.g., "Bharatmala Pariyojana")
+                  - budget_category: Category (e.g., "Expenditure Budget")
+                  - state: State/Central (e.g., "Central")
+                  - document_type: Document type (e.g., "Demands for Grants")
+        chunk_size: Target chunk size in characters (default: 1000)
+        overlap: Overlap size in characters (default: 200)
         
     Returns:
-        List of chunk dictionaries with metadata:
+        List of chunk dictionaries with complete metadata:
         [
             {
                 'text': str,
                 'year': str,
                 'ministry': str,
-                'scheme': str or None,
-                'page_number': int,
-                'document_title': str
+                'scheme': str,
+                'budget_category': str,
+                'state': str,
+                'document_type': str,
+                'page_number': int
             }
         ]
     """
     chunks = []
     
+    chunks = []
+    
+    # Global chunk index for the entire document (to allow sequential retrieval)
+    doc_chunk_index = 0
+    
     for page_data in pages_data:
         page_text = page_data.get('text', '')
         page_number = page_data.get('page_number', 0)
+        document_name = page_data.get('document_name', 'unknown_doc')
         
         # Skip empty pages
         if not page_text.strip():
@@ -298,29 +230,38 @@ def chunk_text_with_metadata(
         # Split text into chunks with overlap
         page_chunks = _split_text_into_chunks(page_text, chunk_size, overlap)
         
-        # Enrich each chunk with metadata
+        # Enrich each chunk with complete metadata
         for chunk_text in page_chunks:
+            # Create a deterministic ID for this chunk
+            chunk_id = f"{document_name}_chunk_{doc_chunk_index}"
+            
             chunk = {
+                'id': chunk_id,
                 'text': chunk_text,
-                'year': year,
-                'ministry': ministry,
-                'scheme': scheme,
+                'year': metadata.get('year', 'Unknown'),
+                'ministry': metadata.get('ministry', 'Unknown'),
+                'scheme': metadata.get('scheme', 'General'),
+                'budget_category': metadata.get('budget_category', 'General'),
+                'state': metadata.get('state', 'Central'),
+                'document_type': metadata.get('document_type', 'Budget Document'),
                 'page_number': page_number,
-                'document_title': document_title
+                'document_name': document_name,
+                'chunk_index': doc_chunk_index
             }
             chunks.append(chunk)
+            doc_chunk_index += 1
     
     return chunks
 
 
-def _split_text_into_chunks(text: str, chunk_size: int = 400, overlap: int = 50) -> List[str]:
+def _split_text_into_chunks(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
     """
     Split text into overlapping chunks.
     
     Args:
         text: Text to split
-        chunk_size: Target size for each chunk (default: 400 characters)
-        overlap: Number of characters to overlap between chunks (default: 50)
+        chunk_size: Target size for each chunk (default: 1000 characters)
+        overlap: Number of characters to overlap between chunks (default: 200)
         
     Returns:
         List of text chunks

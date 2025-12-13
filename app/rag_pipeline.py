@@ -3,14 +3,18 @@ RAG Pipeline for GovInsight
 
 This module orchestrates the complete RAG pipeline:
 - PDF loading and text extraction
-- Chunking with metadata enrichment
+- Chunking with manual metadata (no automatic extraction)
 - Embedding generation
 - Vector store indexing
 - Semantic query and retrieval
+
+NOTE: All metadata is manually configured in metadata_config.py
+to ensure consistent and complete metadata for every chunk.
 """
 
 import os
 import sys
+import re
 import argparse
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -19,38 +23,116 @@ from typing import List, Dict, Optional
 if __name__ == "__main__":
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
-try:
-    from app.pdf_processor import PDFProcessor, chunk_text_with_metadata
-    from app.utils import (
-        initialize_vector_store,
-        initialize_embeddings,
-        embed_chunks,
-        format_metadata_for_storage
-    )
-except ModuleNotFoundError:
-    from pdf_processor import PDFProcessor, chunk_text_with_metadata
-    from utils import (
-        initialize_vector_store,
-        initialize_embeddings,
-        embed_chunks,
-        format_metadata_for_storage
-    )
+from app.pdf_processor import PDFProcessor, chunk_text_with_metadata
+from app.metadata_config import get_metadata_for_document, validate_metadata
+from app.utils import (
+    initialize_vector_store,
+    initialize_embeddings,
+    embed_chunks,
+    format_metadata_for_storage
+)
 
 
-# System prompt template for Gemini-2.5-Flash
+def normalize_year_filter(year: Optional[str]) -> Optional[str]:
+    """
+    Normalize year format to match metadata format (YYYY-YY).
+    
+    Args:
+        year: Year string in various formats (2024, 2024-25, etc.)
+        
+    Returns:
+        Normalized year string (YYYY-YY format) or original if already valid
+    """
+    if not year:
+        return None
+    
+    # If already in YYYY-YY format, return as-is
+    if re.match(r'^\d{4}-\d{2}$', year):
+        return year
+    
+    # If in YYYY format, convert to YYYY-YY
+    if re.match(r'^\d{4}$', year):
+        year_num = int(year)
+        next_year = str(year_num + 1)[-2:]
+        normalized = f"{year}-{next_year}"
+        print(f"  Normalized year filter: '{year}' → '{normalized}'")
+        return normalized
+    
+    # If in YYYY-YYYY format, convert to YYYY-YY
+    match = re.match(r'^(\d{4})-(\d{4})$', year)
+    if match:
+        start_year = match.group(1)
+        end_year = match.group(2)[-2:]
+        normalized = f"{start_year}-{end_year}"
+        print(f"  Normalized year filter: '{year}' → '{normalized}'")
+        return normalized
+    
+    # Otherwise return as-is and warn
+    print(f"  ⚠️  Warning: Unusual year format '{year}', using as-is")
+    return year
+
+
+def preprocess_query(query: str, year_filter: Optional[str] = None) -> str:
+    """
+    Preprocess query to improve semantic matching.
+    
+    Expands abbreviations and adds context for better retrieval.
+    
+    Args:
+        query: Original user query
+        year_filter: Optional year filter for context
+        
+    Returns:
+        Preprocessed query string
+    """
+    # Expand common abbreviations
+    expansions = {
+        r'\bedu\b': 'education',
+        r'\bdef\b': 'defence defense',
+        r'\bfin\b': 'finance financial',
+        r'\bMoRTH\b': 'Ministry of Road Transport Highways',
+        r'\bNITI\b': 'NITI Aayog',
+        r'\bWCD\b': 'Women Child Development',
+        r'\bMoHFW\b': 'Ministry of Health Family Welfare',
+        r'\balloc\b': 'allocation allocated',
+        r'\bbudg\b': 'budget',
+    }
+    
+    processed = query
+    for pattern, expansion in expansions.items():
+        processed = re.sub(pattern, expansion, processed, flags=re.IGNORECASE)
+    
+    # Add year context if provided
+    if year_filter:
+        processed = f"{processed} fiscal year {year_filter}"
+    
+    # If query changed, log it
+    if processed != query:
+        print(f"  Query preprocessing: '{query}' → '{processed}'")
+    
+    return processed
+
+
+
+# System prompt template for Gemini
 SYSTEM_PROMPT_TEMPLATE = """You are GovInsight, an AI assistant specialized in analyzing Indian Union Budget documents. Your role is to provide accurate, citation-backed answers about government budget allocations, schemes, and expenditure.
 
-**Critical Instructions:**
+**CRITICAL RULES - STRICTLY ENFORCE:**
 
-1. **Use Only Provided Context**: Base your answers EXCLUSIVELY on the retrieved document chunks provided below. DO NOT use external knowledge or make assumptions.
+1. **ONLY USE PROVIDED CONTEXT**: You MUST base your answers EXCLUSIVELY on the retrieved document chunks provided below. 
+   - DO NOT use any external knowledge, general knowledge, or information not explicitly in the provided chunks.
+   - DO NOT make assumptions or inferences beyond what is directly stated in the context.
+   - If information is not in the provided chunks, you MUST say so explicitly.
 
-2. **Mandatory Citations**: For EVERY claim or figure you mention, cite the source using this format:
-   - [Document: {document_title}, Page: {page_number}]
+2. **MANDATORY CITATIONS**: For EVERY claim, figure, number, or statement you make, you MUST cite the source using this exact format:
+   - [Year: {{year}}, Ministry: {{ministry}}, Page: {{page_number}}]
+   - Multiple citations should be separated by semicolons: [Year: 2024-25, Ministry: Finance, Page: 10]; [Year: 2023-24, Ministry: Finance, Page: 15]
    
-3. **No Hallucination**: If the provided context does not contain the information needed to answer the query:
-   - Explicitly state: "Data not found in the provided budget documents."
-   - Do NOT fabricate numbers, dates, or details.
-   - You may suggest related information if available in the context.
+3. **ZERO TOLERANCE FOR HALLUCINATION**: 
+   - If the provided context does not contain the information needed to answer the query, you MUST state: "The requested information is not available in the provided budget documents."
+   - DO NOT fabricate, estimate, approximate, or guess any numbers, dates, names, or details.
+   - DO NOT combine information from different sources unless explicitly stated in the context.
+   - If you're uncertain, state your uncertainty clearly.
 
 4. **Structured Responses**:
    - Use clear, concise language
@@ -110,26 +192,33 @@ class RAGPipeline:
     
     def index_documents(
         self,
-        document_metadata: Optional[List[Dict]] = None,
+        document_metadata: Optional[Dict[str, Dict]] = None,
         reset_vectorstore: bool = False
     ) -> None:
         """
         Index all PDF documents into the vector store.
         
+        Metadata is obtained from:
+        1. The document_metadata parameter (if provided) - dictionary keyed by filename
+        2. The metadata_config.py configuration file
+        3. Default values to ensure complete metadata schema
+        
         Args:
-            document_metadata: Optional list of metadata dicts for each PDF
-                               If not provided, extracts from filenames
+            document_metadata: Optional dictionary mapping filenames to metadata dicts.
+                               If not provided, uses metadata_config.py configuration.
             reset_vectorstore: If True, clear existing vector store before indexing
         """
         print("=" * 60)
         print("Starting GovInsight Document Indexing")
         print("=" * 60)
+        print("\n📋 NOTE: Using manual metadata configuration (no auto-extraction)")
+        print("   Configure metadata in app/metadata_config.py\n")
         
         # Step 1: Initialize PDF processor
-        print("\n[1/5] Initializing PDF processor...")
+        print("[1/5] Initializing PDF processor...")
         self.pdf_processor = PDFProcessor(pdf_directory=self.pdf_directory)
         pdf_files = self.pdf_processor.load_pdfs()
-        print(f"Indexing {len(pdf_files)} PDFs...")
+        print(f"Found {len(pdf_files)} PDFs to index")
         
         # Step 2: Extract text from all PDFs
         print(f"\n[2/5] Extracting text from {len(pdf_files)} PDFs...")
@@ -141,27 +230,25 @@ class RAGPipeline:
             # Extract text page by page
             pages_data = self.pdf_processor.extract_text_from_pdf(pdf_path)
             
-            # Get or extract metadata for this PDF
-            if document_metadata and idx - 1 < len(document_metadata):
-                metadata = document_metadata[idx - 1]
+            # Get metadata for this PDF from configuration
+            # Priority: document_metadata param > metadata_config.py > defaults
+            if document_metadata and pdf_path.name in document_metadata:
+                metadata = validate_metadata(document_metadata[pdf_path.name])
+                print(f"    ✓ Using provided metadata")
             else:
-                metadata = self.pdf_processor.extract_metadata_from_filename(pdf_path.name)
+                metadata = get_metadata_for_document(pdf_path.name)
             
-            # Extract metadata fields
-            year = metadata.get('year', 'Unknown')
-            ministry = metadata.get('ministry', 'Unknown')
-            document_title = pdf_path.stem
-            scheme = metadata.get('scheme', None)
+            # Log the metadata being used
+            print(f"    → Year: {metadata.get('year', 'Unknown')}, "
+                  f"Ministry: {metadata.get('ministry', 'Unknown')}, "
+                  f"Scheme: {metadata.get('scheme', 'General')}")
             
-            # Chunk the extracted text with metadata
+            # Chunk the extracted text with complete metadata
             chunks = chunk_text_with_metadata(
                 pages_data=pages_data,
-                year=year,
-                ministry=ministry,
-                document_title=document_title,
-                scheme=scheme,
-                chunk_size=400,
-                overlap=50
+                metadata=metadata,
+                chunk_size=1000,
+                overlap=200
             )
             
             all_chunks.extend(chunks)
@@ -195,6 +282,7 @@ class RAGPipeline:
         # Prepare data for storage
         documents = [chunk['text'] for chunk in all_chunks]
         metadatas = [format_metadata_for_storage(chunk) for chunk in all_chunks]
+        ids = [chunk['id'] for chunk in all_chunks]
         
         # Add to vector store in batches
         batch_size = 100
@@ -209,7 +297,8 @@ class RAGPipeline:
             self.vector_store.add_documents(
                 documents=documents[i:batch_end],
                 embeddings=embeddings[i:batch_end],
-                metadatas=metadatas[i:batch_end]
+                metadatas=metadatas[i:batch_end],
+                ids=ids[i:batch_end]
             )
         
         print("Stored in ChromaDB")
@@ -227,7 +316,7 @@ class RAGPipeline:
     def query_documents(
         self,
         query: str,
-        top_k: int = 5,
+        top_k: int = 7,
         year_filter: Optional[str] = None,
         ministry_filter: Optional[str] = None,
         scheme_filter: Optional[str] = None
@@ -266,15 +355,21 @@ class RAGPipeline:
                 model_type=self.embedding_model_type
             )
         
-        # Generate query embedding
-        print(f"Generating query embedding for: '{query}'")
-        query_embedding = self.embedding_generator.get_query_embedding(query)
+        # Preprocess query for better matching
+        processed_query = preprocess_query(query, year_filter)
         
-        # Build metadata filter (where clause)
+        # Generate query embedding
+        print(f"Generating query embedding for: '{processed_query}'")
+        query_embedding = self.embedding_generator.get_query_embedding(processed_query)
+        
+        # Build metadata filter (where clause) with normalization
         where_filter = {}
         
         if year_filter:
-            where_filter["year"] = year_filter
+            # Normalize year format (e.g., "2024" → "2024-25")
+            normalized_year = normalize_year_filter(year_filter)
+            if normalized_year:
+                where_filter["year"] = normalized_year
         
         if ministry_filter:
             where_filter["ministry"] = ministry_filter
@@ -301,21 +396,131 @@ class RAGPipeline:
         
         results = self.vector_store.collection.query(**query_params)
         
-        # Format results
+        
+        # Format results with relevance filtering
         retrieved_chunks = []
         
+        # CRITICAL: Filter by relevance threshold to exclude irrelevant chunks
+        # Lower distance = more similar (cosine distance)
+        RELEVANCE_THRESHOLD = 1.2  # Only include chunks with distance <= 1.2
+        
         if results and results['documents'] and results['documents'][0]:
-            for i in range(len(results['documents'][0])):
-                chunk = {
-                    'text': results['documents'][0][i],
-                    'metadata': results['metadatas'][0][i] if results['metadatas'] else {},
-                    'distance': results['distances'][0][i] if results['distances'] else 0.0
-                }
-                retrieved_chunks.append(chunk)
+            total_retrieved = len(results['documents'][0])
+            
+            for i in range(total_retrieved):
+                # Ensure metadata is always a dict, never None
+                metadata = results['metadatas'][0][i] if (results.get('metadatas') and results['metadatas'][0] and i < len(results['metadatas'][0])) else {}
+                if metadata is None:
+                    metadata = {}
+                
+                distance = results['distances'][0][i] if (results.get('distances') and results['distances'][0] and i < len(results['distances'][0])) else 0.0
+                
+                # Filter by relevance threshold
+                if distance <= RELEVANCE_THRESHOLD:
+                    chunk = {
+                        'text': results['documents'][0][i] if results['documents'][0][i] else '',
+                        'metadata': metadata,
+                        'distance': distance
+                    }
+                    retrieved_chunks.append(chunk)
+                else:
+                    print(f"  Filtered out chunk {i+1} (distance: {distance:.3f} > threshold: {RELEVANCE_THRESHOLD})")
+             
+            print(f"Retrieved {len(retrieved_chunks)} relevant chunks (from {total_retrieved} total)")
+        else:
+            print("No results returned from vector store query")
         
-        print(f"Retrieved {len(retrieved_chunks)} chunks")
+        if not retrieved_chunks:
+            print("No relevant chunks found.")
+            return []
+
+        # ---------------------------------------------------------
+        # Context Expansion: Fetch Neighbor Chunks
+        # ---------------------------------------------------------
+        print("Expanding context with neighbors...")
         
-        return retrieved_chunks
+        # Collect all neighbor IDs to fetch in batch
+        neighbor_ids_to_fetch = set()
+        chunk_map = {} # map id -> chunk data
+        
+        for chunk in retrieved_chunks:
+            metadata = chunk['metadata']
+            doc_name = metadata.get('document_name')
+            chunk_index = metadata.get('chunk_index')
+            
+            # If we have index info, look for neighbors
+            if doc_name and chunk_index is not None:
+                # Get surrounding +/- 1 chunk
+                prev_id = f"{doc_name}_chunk_{chunk_index - 1}"
+                next_id = f"{doc_name}_chunk_{chunk_index + 1}"
+                
+                neighbor_ids_to_fetch.add(prev_id)
+                neighbor_ids_to_fetch.add(next_id)
+        
+        # Remove IDs we already have in retrieved_chunks
+        existing_ids = {c['metadata'].get('id', '') for c in retrieved_chunks} # We need to ensure ID is in metadata
+        # Actually, we didn't store ID in metadata explicitly in index_documents? 
+        # Wait, Chroma stores ID separately. But we added 'id' to chunk dict in pdf_processor.
+        # Let's hope format_metadata_for_storage includes it or we can infer it.
+        # In pdf_processor, we added 'id' to chunk dict, but format_metadata_for_storage might strictly filter?
+        # Let's check format_metadata_for_storage later. For now, assume we can fetch all potential neighbors.
+        
+        if neighbor_ids_to_fetch:
+            try:
+                # Batch fetch from Chroma
+                neighbor_results = self.vector_store.collection.get(
+                    ids=list(neighbor_ids_to_fetch)
+                )
+                
+                # neighbor_results keys: ids, embeddings, metadatas, documents
+                if neighbor_results and neighbor_results['ids']:
+                    for i, nid in enumerate(neighbor_results['ids']):
+                        # Check validity (sometimes get returns empty placeholders?)
+                        if neighbor_results['documents'][i]:
+                            chunk_map[nid] = {
+                                'text': neighbor_results['documents'][i],
+                                'metadata': neighbor_results['metadatas'][i],
+                                'is_neighbor': True
+                            }
+            except Exception as e:
+                print(f"Error fetching neighbors: {e}")
+        
+        # Now merge neighbors into retrieved chunks
+        # structure: for each main chunk, prepend prev and append next if they exist
+        final_chunks = []
+        processed_ids = set()
+        
+        for chunk in retrieved_chunks:
+            # Reconstruct its ID (or hope it's in metadata)
+            # Safe way: retrieve it from metadata if we stored it, or reconstruct
+            meta = chunk['metadata']
+            doc_name = meta.get('document_name')
+            c_idx = meta.get('chunk_index')
+            
+            if doc_name is not None and c_idx is not None:
+                current_id = f"{doc_name}_chunk_{c_idx}"
+                
+                # Check for Previous Neighbor
+                prev_id = f"{doc_name}_chunk_{c_idx - 1}"
+                if prev_id in chunk_map:
+                    prev_chunk = chunk_map[prev_id]
+                    # Only add if not already a main result (to avoid dupes, though context Window might benefit)
+                    # Simple approach: Merge text
+                    chunk['text'] = f"{prev_chunk['text']}\n\n{chunk['text']}"
+                    # Update metadata to show it includes previous content?
+                    # Maybe just keep metadata of main chunk
+                
+                # Check for Next Neighbor
+                next_id = f"{doc_name}_chunk_{c_idx + 1}"
+                if next_id in chunk_map:
+                    next_chunk = chunk_map[next_id]
+                    chunk['text'] = f"{chunk['text']}\n\n{next_chunk['text']}"
+            
+            final_chunks.append(chunk)
+
+        print(f"Retrieved {len(final_chunks)} chunks after context expansion")
+        
+        return final_chunks
     
     def generate_answer(
         self,
@@ -339,6 +544,14 @@ class RAGPipeline:
                 'num_chunks_used': int
             }
         """
+        # Handle empty chunks
+        if not retrieved_chunks or len(retrieved_chunks) == 0:
+            return {
+                'answer': "No relevant documents were found matching your query and filters. Please try:\n\n1. Removing or adjusting the year/ministry/scheme filters\n2. Using a broader search query\n3. Checking if documents have been indexed with the correct metadata",
+                'sources': [],
+                'num_chunks_used': 0
+            }
+        
         import google.generativeai as genai
         
         # Get API key from environment
@@ -349,41 +562,55 @@ class RAGPipeline:
         # Configure Gemini
         genai.configure(api_key=api_key)
         
-        # Initialize model
-        model = genai.GenerativeModel('gemini-2.0-flash-exp')
+        # Initialize model - using gemini-2.5-flash
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         # Format context from retrieved chunks
         context_parts = []
         sources = []
         
         for i, chunk in enumerate(retrieved_chunks, 1):
-            text = chunk['text']
-            metadata = chunk['metadata']
+            text = chunk.get('text', '')
+            # Ensure metadata is always a dictionary, never None
+            metadata = chunk.get('metadata', {})
+            if metadata is None:
+                metadata = {}
             
-            # Format chunk with metadata
+            # Format chunk with metadata - all fields now guaranteed to exist
             chunk_text = f"[Chunk {i}]\n"
-            chunk_text += f"Document: {metadata.get('document_title', 'Unknown')}\n"
-            chunk_text += f"Page: {metadata.get('page_number', 'N/A')}\n"
+            chunk_text += f"Page: {metadata.get('page_number', 0)}\n"
             chunk_text += f"Year: {metadata.get('year', 'Unknown')}\n"
             chunk_text += f"Ministry: {metadata.get('ministry', 'Unknown')}\n"
             
-            scheme = metadata.get('scheme', 'None')
-            if scheme and scheme != 'None':
+            scheme = metadata.get('scheme', 'General')
+            if scheme and scheme != 'General' and scheme != 'None':
                 chunk_text += f"Scheme: {scheme}\n"
+            
+            budget_category = metadata.get('budget_category', 'General')
+            if budget_category and budget_category != 'General':
+                chunk_text += f"Category: {budget_category}\n"
             
             chunk_text += f"\nContent:\n{text}\n"
             
             context_parts.append(chunk_text)
             
-            # Track sources
+            # Track sources - ensure page_number is an int
+            page_num = metadata.get('page_number', 0)
+            if not isinstance(page_num, int):
+                try:
+                    page_num = int(page_num) if page_num else 0
+                except (ValueError, TypeError):
+                    page_num = 0
+            
             sources.append({
-                'document_title': metadata.get('document_title', 'Unknown'),
-                'page_number': metadata.get('page_number', 'N/A'),
+                'page_number': page_num,
                 'year': metadata.get('year', 'Unknown'),
                 'ministry': metadata.get('ministry', 'Unknown')
             })
         
-        context = "\n" + "="*60 + "\n\n".join(context_parts)
+        # Properly format context with separators between chunks
+        separator = "\n" + "="*60 + "\n\n"
+        context = separator + separator.join(context_parts)
         
         # Format the prompt
         prompt = SYSTEM_PROMPT_TEMPLATE.format(
@@ -393,12 +620,12 @@ class RAGPipeline:
         
         print("Generating answer using Gemini-2.5-Flash...")
         
-        # Generate response
+        # Generate response with improved parameters
         generation_config = genai.types.GenerationConfig(
-            temperature=temperature,
+            temperature=max(0.3, temperature),  # Minimum 0.3 for better reasoning
             top_p=0.95,
             top_k=40,
-            max_output_tokens=2048,
+            max_output_tokens=4096,  # Increased for longer, more complete answers
         )
         
         response = model.generate_content(
@@ -445,7 +672,7 @@ def index_pdfs_cli(
 
 def query_rag(
     query: str,
-    top_k: int = 5,
+    top_k: int = 7,
     year: Optional[str] = None,
     ministry: Optional[str] = None,
     scheme: Optional[str] = None,
@@ -485,7 +712,7 @@ def query_rag(
 
 def complete_query(
     query: str,
-    top_k: int = 5,
+    top_k: int = 7,
     year: Optional[str] = None,
     ministry: Optional[str] = None,
     scheme: Optional[str] = None,
@@ -522,6 +749,25 @@ def complete_query(
         ministry_filter=ministry,
         scheme_filter=scheme
     )
+    
+    # Check if any chunks were retrieved
+    if not retrieved_chunks or len(retrieved_chunks) == 0:
+        # Build filter message
+        filter_parts = []
+        if year:
+            filter_parts.append(f"year: {year}")
+        if ministry:
+            filter_parts.append(f"ministry: {ministry}")
+        if scheme:
+            filter_parts.append(f"scheme: {scheme}")
+        
+        filter_msg = f" with filters ({', '.join(filter_parts)})" if filter_parts else ""
+        
+        return {
+            'answer': f"No documents were found matching your query{filter_msg}. This could mean:\n\n1. **No documents match the specified filters** - Try removing or adjusting the year/ministry/scheme filters\n2. **Documents may not be indexed** - Ensure PDFs have been processed with: `python app/rag_pipeline.py --index`\n3. **Metadata mismatch** - The documents may have different year/ministry values than the filter\n\n**Suggestions:**\n- Remove the year filter to search across all years\n- Try a broader query without specific filters\n- Check if documents exist for the selected year",
+            'sources': [],
+            'num_chunks_used': 0
+        }
     
     # Generate answer
     result = pipeline.generate_answer(

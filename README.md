@@ -152,12 +152,14 @@ Response Formatting (Natural Language + Tables + Citations)
 2. **Text Extraction**: Extract text using PyMuPDF, preserving structure where possible
 3. **Cleaning**: Remove headers, footers, page numbers, and formatting artifacts
 4. **Chunking**: Split documents into 300–500 character chunks with 50-character overlap
-5. **Metadata Enrichment**: Attach metadata to each chunk:
+5. **Manual Metadata Configuration**: Metadata is configured in `app/metadata_config.py` (NOT extracted from PDFs):
    - `year`: Budget year (e.g., 2023-24)
    - `ministry`: Source ministry (e.g., MoRTH)
-   - `scheme`: Specific scheme name (if applicable)
-   - `page_number`: Original page for citation
-   - `document_title`: Source document name
+   - `scheme`: Specific scheme name (e.g., Bharatmala Pariyojana)
+   - `budget_category`: Category (e.g., Expenditure Budget)
+   - `state`: State/Central (e.g., Central)
+   - `document_type`: Document type (e.g., Demands for Grants)
+   - `page_number`: Original page for citation (auto-detected)
 6. **Embedding Generation**: Generate vector embeddings using LlamaIndex embedding model
 7. **Vector Storage**: Store embeddings and metadata in ChromaDB with persistent storage
 
@@ -177,13 +179,69 @@ Response Formatting (Natural Language + Tables + Citations)
     "text": "Ministry of Road Transport & Highways was allocated Rs. 2,70,435 crore...",
     "metadata": {
         "year": "2024-25",
-        "ministry": "MoRTH",
+        "ministry": "Ministry of Road Transport & Highways",
         "scheme": "Bharatmala Pariyojana",
-        "page_number": 145,
-        "document_title": "Expenditure Budget Vol II 2024-25"
+        "budget_category": "Demands for Grants",
+        "state": "Central",
+        "document_type": "Demands for Grants",
+        "page_number": 145
     }
 }
 ```
+
+> **Note:** All metadata is manually configured in `app/metadata_config.py` to ensure consistency and prevent extraction failures. See the [Metadata Configuration](#metadata-configuration) section for details.
+
+---
+
+## Metadata Configuration
+
+The RAG pipeline uses **manual metadata configuration** instead of automatic extraction from PDF content. This ensures:
+
+- **Reliability**: No extraction failures or incomplete metadata
+- **Consistency**: Every chunk has the same metadata schema
+- **Predictability**: Queries never fail due to missing metadata fields
+
+### Configuring Metadata
+
+1. Open `app/metadata_config.py`
+2. Add an entry to `DOCUMENT_METADATA` for each PDF file:
+
+```python
+DOCUMENT_METADATA = {
+    "Budget_2023-24_Expenditure.pdf": {
+        "year": "2023-24",
+        "ministry": "Ministry of Finance",
+        "scheme": "General",
+        "budget_category": "Expenditure Budget",
+        "state": "Central",
+        "document_type": "Expenditure Budget"
+    },
+    "MoRTH_Demands_2024-25.pdf": {
+        "year": "2024-25",
+        "ministry": "Ministry of Road Transport & Highways",
+        "scheme": "Bharatmala Pariyojana",
+        "budget_category": "Demands for Grants",
+        "state": "Central",
+        "document_type": "Demands for Grants"
+    },
+    # Add more PDFs...
+}
+```
+
+3. Run the indexing pipeline: `python app/rag_pipeline.py --index --reset`
+
+### Metadata Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `year` | string | Yes | Budget year (e.g., "2023-24") |
+| `ministry` | string | Yes | Ministry name |
+| `scheme` | string | Yes | Scheme name (use "General" if not specific) |
+| `budget_category` | string | Yes | Category (e.g., "Expenditure Budget") |
+| `state` | string | Yes | "Central" or state name |
+| `document_type` | string | Yes | Document type |
+
+> **Important:** If a PDF is not configured in `DOCUMENT_METADATA`, default values will be used and a warning will be logged during indexing.
 
 ---
 
@@ -204,6 +262,7 @@ govinsight/
 │   ├── main.py                # FastAPI app entry point
 │   ├── rag_pipeline.py        # Core RAG logic (indexing + querying)
 │   ├── pdf_processor.py       # PDF parsing and cleaning
+│   ├── metadata_config.py     # Manual metadata configuration for PDFs
 │   ├── utils.py               # Helper functions
 │
 ├── requirements.txt           # Python dependencies
@@ -404,16 +463,14 @@ By requiring citations and gracefully handling missing data, GovInsight prioriti
 ### Output Example
 
 {
-  "answer": "The allocation for the Bharatmala Pariyojana in the 2023-24 budget is ₹10,000 Crore. [Document: Budget_2023-24, Page: 12]",
+  "answer": "The allocation for the Bharatmala Pariyojana in the 2023-24 budget is ₹10,000 Crore. [Year: 2023-24, Ministry: Ministry of Road Transport and Highways, Page: 12]",
   "sources": [
     {
-      "document_title": "Budget_2023-24",
       "page_number": 12,
       "year": "2023-24",
       "ministry": "Ministry of Road Transport and Highways"
     },
     {
-      "document_title": "Expenditure_Profile",
       "page_number": 45,
       "year": "2023-24",
       "ministry": "Finance"

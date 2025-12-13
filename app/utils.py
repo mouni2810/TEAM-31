@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 from typing import List, Dict, Optional, Union
 import chromadb
-from chromadb.config import Settings
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -52,14 +51,8 @@ class VectorStoreManager:
         Returns:
             ChromaDB client instance
         """
-        settings = Settings(
-            persist_directory=str(self.persist_directory),
-            anonymized_telemetry=False,
-            allow_reset=True,
-            is_persistent=True
-        )
-        
-        client = chromadb.Client(settings)
+        # Use PersistentClient for proper disk persistence
+        client = chromadb.PersistentClient(path=str(self.persist_directory))
         
         print(f"ChromaDB client initialized with persistent storage: {self.persist_directory}")
         
@@ -68,6 +61,8 @@ class VectorStoreManager:
     def _get_or_create_collection(self) -> chromadb.Collection:
         """
         Get existing collection or create new one with cosine similarity.
+        
+        Also verifies embedding model consistency to prevent retrieval issues.
         
         Returns:
             ChromaDB collection instance
@@ -80,16 +75,32 @@ class VectorStoreManager:
             print(f"Loaded existing collection: {self.collection_name}")
             print(f"Collection contains {collection.count()} documents")
             
+            # CRITICAL: Verify embedding model consistency
+            stored_model = collection.metadata.get("embedding_model", "unknown")
+            current_model = os.getenv("EMBEDDING_MODEL", "huggingface")
+            
+            if stored_model != "unknown" and stored_model != current_model:
+                print(f"\n⚠️  WARNING: EMBEDDING MODEL MISMATCH DETECTED!")
+                print(f"   Collection was indexed with: {stored_model}")
+                print(f"   Currently configured to use: {current_model}")
+                print(f"   This WILL cause poor retrieval quality!")
+                print(f"   Solution: Re-index with: python app/rag_pipeline.py --index --reset\n")
+            elif stored_model == current_model:
+                print(f"✓ Embedding model verified: {current_model}")
+            
         except Exception:
             # Create new collection if it doesn't exist
+            current_model = os.getenv("EMBEDDING_MODEL", "huggingface")
             collection = self.client.create_collection(
                 name=self.collection_name,
                 metadata={
                     "hnsw:space": "cosine",  # Use cosine similarity
+                    "embedding_model": current_model,  # Track embedding model
                     "description": "Indian Government Budget Documents"
                 }
             )
             print(f"Created new collection: {self.collection_name}")
+            print(f"Embedding model: {current_model}")
         
         return collection
     
@@ -209,21 +220,47 @@ def format_metadata_for_storage(chunk: Dict) -> Dict:
     Format chunk metadata for ChromaDB storage.
     
     ChromaDB has restrictions on metadata types (only str, int, float, bool).
-    This function ensures all metadata is properly formatted.
+    This function ensures all metadata is properly formatted AND complete,
+    guaranteeing that every chunk has all required metadata fields.
+    
+    This prevents KeyError exceptions during queries by ensuring
+    fields like 'year', 'ministry', 'scheme' are always present.
     
     Args:
         chunk: Chunk dictionary with text and metadata
         
     Returns:
-        Formatted metadata dictionary safe for ChromaDB
+        Formatted metadata dictionary safe for ChromaDB with all required fields
     """
+    # Define required fields with their default values
+    # This ensures every chunk has complete metadata schema
     metadata = {
-        "year": str(chunk.get("year", "")),
-        "ministry": str(chunk.get("ministry", "")),
-        "scheme": str(chunk.get("scheme", "")) if chunk.get("scheme") else "None",
-        "page_number": int(chunk.get("page_number", 0)),
-        "document_title": str(chunk.get("document_title", ""))
+        "year": str(chunk.get("year", "Unknown") or "Unknown"),
+        "ministry": str(chunk.get("ministry", "Unknown") or "Unknown"),
+        "scheme": str(chunk.get("scheme", "General") or "General"),
+        "budget_category": str(chunk.get("budget_category", "General") or "General"),
+        "state": str(chunk.get("state", "Central") or "Central"),
+        "document_type": str(chunk.get("document_type", "Budget Document") or "Budget Document"),
+        "page_number": int(chunk.get("page_number", 0) or 0),
+        # Context fields for retrieval
+        "document_name": str(chunk.get("document_name", "")),
+        "chunk_index": int(chunk.get("chunk_index", -1)),
+        "id": str(chunk.get("id", ""))
     }
+    
+    # Ensure no empty strings (replace with defaults)
+    if not metadata["year"].strip():
+        metadata["year"] = "Unknown"
+    if not metadata["ministry"].strip():
+        metadata["ministry"] = "Unknown"
+    if not metadata["scheme"].strip():
+        metadata["scheme"] = "General"
+    if not metadata["budget_category"].strip():
+        metadata["budget_category"] = "General"
+    if not metadata["state"].strip():
+        metadata["state"] = "Central"
+    if not metadata["document_type"].strip():
+        metadata["document_type"] = "Budget Document"
     
     return metadata
 

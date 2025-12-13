@@ -42,7 +42,7 @@ class QueryFilters(BaseModel):
     year: Optional[str] = Field(None, description="Budget year (e.g., '2023-24')")
     ministry: Optional[str] = Field(None, description="Ministry name")
     scheme: Optional[str] = Field(None, description="Scheme name")
-    top_k: Optional[int] = Field(5, ge=1, le=10, description="Number of chunks to retrieve")
+    top_k: Optional[int] = Field(7, ge=1, le=10, description="Number of chunks to retrieve")
 
 
 class QueryRequest(BaseModel):
@@ -54,7 +54,6 @@ class QueryRequest(BaseModel):
 
 class SourceDocument(BaseModel):
     """Source document metadata"""
-    document_title: str
     page_number: int
     year: str
     ministry: str
@@ -132,6 +131,7 @@ async def query_documents(request: QueryRequest):
         filters = request.filters or QueryFilters()
         
         # Execute RAG query
+        print(f"[DEBUG] Executing query: {request.query}")
         result = complete_query(
             query=request.query,
             top_k=filters.top_k or 5,
@@ -140,19 +140,55 @@ async def query_documents(request: QueryRequest):
             scheme=filters.scheme,
             temperature=request.temperature
         )
+        print(f"[DEBUG] Result keys: {result.keys() if result else 'None'}")
+        print(f"[DEBUG] Result: {result}")
         
-        # Format sources
-        sources = [
-            SourceDocument(
-                document_title=source['document_title'],
-                page_number=source['page_number'],
-                year=source['year'],
-                ministry=source['ministry']
-            )
-            for source in result['sources']
-        ]
+        # Format sources - ensure sources list exists
+        sources = []
+        sources_list = result.get('sources', [])
+        if sources_list is None:
+            sources_list = []
+        
+        print(f"[DEBUG] Sources list: {sources_list}")
+        
+        for idx, source in enumerate(sources_list):
+            print(f"[DEBUG] Processing source {idx}: {source}")
+            # Ensure source is a dictionary
+            if not isinstance(source, dict):
+                print(f"[DEBUG] Skipping non-dict source: {source}")
+                continue
+            
+            # Handle page_number - ensure it's always an int
+            page_num = source.get('page_number', 0)
+            if isinstance(page_num, str):
+                if page_num == 'N/A' or page_num == '':
+                    page_num = 0
+                else:
+                    try:
+                        page_num = int(page_num)
+                    except (ValueError, TypeError):
+                        page_num = 0
+            elif not isinstance(page_num, int):
+                page_num = 0
+            
+            # Ensure year and ministry are always valid strings
+            year = source.get('year', 'Unknown')
+            if not year or year == '':
+                year = 'Unknown'
+            
+            ministry = source.get('ministry', 'Unknown')
+            if not ministry or ministry == '':
+                ministry = 'Unknown'
+            
+            print(f"[DEBUG] Creating SourceDocument: page={page_num}, year={year}, ministry={ministry}")
+            sources.append(SourceDocument(
+                page_number=page_num,
+                year=str(year),
+                ministry=str(ministry)
+            ))
         
         # Return response
+        print(f"[DEBUG] Creating QueryResponse with {len(sources)} sources")
         return QueryResponse(
             answer=result['answer'],
             sources=sources,
@@ -172,10 +208,25 @@ async def query_documents(request: QueryRequest):
             detail=f"Invalid request: {str(e)}"
         )
     
-    except Exception as e:
+    except KeyError as e:
+        # Handle missing keys in response data
+        import traceback
+        missing_key = str(e).strip("'\"")
+        tb = traceback.format_exc()
+        print(f"KeyError traceback:\n{tb}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail=f"Internal server error: Missing required field '{missing_key}' in response. Please re-index your documents with: python app/rag_pipeline.py --index --reset"
+        )
+    except Exception as e:
+        import traceback
+        error_details = str(e)
+        tb = traceback.format_exc()
+        print(f"Exception traceback:\n{tb}")
+        # Include more context for debugging
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {error_details}. If this persists, try re-indexing: python app/rag_pipeline.py --index --reset"
         )
 
 

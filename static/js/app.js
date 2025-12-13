@@ -229,12 +229,12 @@ function displaySources(sources, count) {
         return;
     }
 
-    // Remove duplicates based on document title and page
+    // Remove duplicates based on year, ministry, and page
     const uniqueSources = [];
     const seen = new Set();
 
     sources.forEach(source => {
-        const key = `${source.document_title}-${source.page_number}`;
+        const key = `${source.year}-${source.ministry}-${source.page_number}`;
         if (!seen.has(key)) {
             seen.add(key);
             uniqueSources.push(source);
@@ -243,7 +243,7 @@ function displaySources(sources, count) {
 
     const sourcesHTML = uniqueSources.map((source, index) => `
     <div class="source-item">
-      <div class="source-title">📄 ${escapeHtml(source.document_title)}</div>
+      <div class="source-title">📄 ${escapeHtml(source.ministry)} - ${escapeHtml(source.year)}</div>
       <div class="source-meta">
         <span class="source-meta-item">📖 Page ${escapeHtml(String(source.page_number))}</span>
         <span class="source-meta-item">📅 ${escapeHtml(source.year)}</span>
