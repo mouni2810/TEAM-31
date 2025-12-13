@@ -245,7 +245,12 @@ def format_metadata_for_storage(chunk: Dict) -> Dict:
         # Context fields for retrieval
         "document_name": str(chunk.get("document_name", "")),
         "chunk_index": int(chunk.get("chunk_index", -1)),
-        "id": str(chunk.get("id", ""))
+        "id": str(chunk.get("id", "")),
+        # Content density fields for reranking
+        "token_count": int(chunk.get("token_count", 0) or 0),
+        "char_length": int(chunk.get("char_length", 0) or 0),
+        "has_numbers": bool(chunk.get("has_numbers", False)),
+        "number_density": float(chunk.get("number_density", 0.0) or 0.0)
     }
     
     # Ensure no empty strings (replace with defaults)

@@ -162,6 +162,116 @@ SYSTEM_PROMPT_TEMPLATE = """You are GovInsight, an AI assistant specialized in a
 
 
 
+def rerank_chunks_by_content_quality(
+    chunks: List[Dict],
+    query: str,
+    top_k: int = 7
+) -> List[Dict]:
+    """
+    Rerank retrieved chunks based on content quality metrics.
+    
+    Prioritizes chunks that contain more informative content by considering:
+    - Token count (longer chunks may have more context)
+    - Number density (budget docs with numbers are more informative)
+    - Semantic distance (original retrieval score)
+    
+    The final score is a weighted combination:
+    - 60% semantic similarity (inverted distance)
+    - 25% number density (for budget-relevant content)
+    - 15% token count (normalized)
+    
+    Args:
+        chunks: List of retrieved chunks with metadata
+        query: Original user query (for potential query-aware reranking)
+        top_k: Number of chunks to return after reranking
+        
+    Returns:
+        Reranked list of chunks (best first)
+    """
+    if not chunks:
+        return []
+    
+    # Calculate normalization factors
+    max_token_count = max(c.get('metadata', {}).get('token_count', 1) or 1 for c in chunks)
+    max_number_density = max(c.get('metadata', {}).get('number_density', 0.1) or 0.1 for c in chunks)
+    max_distance = max(c.get('distance', 1.0) or 1.0 for c in chunks)
+    
+    # Check if query is asking for numerical/budget information
+    numerical_query_keywords = [
+        'allocation', 'budget', 'crore', 'lakh', 'expenditure', 'amount',
+        'how much', 'total', 'percentage', '%', 'growth', 'increase', 
+        'decrease', 'compare', 'trend', 'fiscal', 'spending', 'cost'
+    ]
+    query_lower = query.lower()
+    is_numerical_query = any(kw in query_lower for kw in numerical_query_keywords)
+    
+    # Adjust weights based on query type
+    if is_numerical_query:
+        # For numerical queries, heavily weight number density
+        weight_semantic = 0.45
+        weight_numbers = 0.40
+        weight_tokens = 0.15
+        print("  Reranking: Numerical query detected, prioritizing data-rich chunks")
+    else:
+        # For general queries, balance semantic and content
+        weight_semantic = 0.60
+        weight_numbers = 0.25
+        weight_tokens = 0.15
+    
+    # Score each chunk
+    scored_chunks = []
+    for chunk in chunks:
+        metadata = chunk.get('metadata', {}) or {}
+        distance = chunk.get('distance', 1.0) or 1.0
+        
+        # Semantic score (inverted and normalized distance - lower distance = higher score)
+        semantic_score = 1.0 - (distance / max_distance) if max_distance > 0 else 0.5
+        
+        # Token count score (normalized)
+        token_count = metadata.get('token_count', 0) or 0
+        token_score = token_count / max_token_count if max_token_count > 0 else 0.5
+        
+        # Number density score (normalized)
+        number_density = metadata.get('number_density', 0.0) or 0.0
+        number_score = number_density / max_number_density if max_number_density > 0 else 0.0
+        
+        # Bonus for chunks that have numbers (especially for budget queries)
+        has_numbers = metadata.get('has_numbers', False)
+        number_bonus = 0.05 if has_numbers and is_numerical_query else 0.0
+        
+        # Calculate weighted final score
+        final_score = (
+            (weight_semantic * semantic_score) +
+            (weight_numbers * number_score) +
+            (weight_tokens * token_score) +
+            number_bonus
+        )
+        
+        scored_chunks.append({
+            **chunk,
+            'rerank_score': round(final_score, 4),
+            'score_breakdown': {
+                'semantic': round(semantic_score, 3),
+                'number_density': round(number_score, 3),
+                'token_count': round(token_score, 3)
+            }
+        })
+    
+    # Sort by final score (descending)
+    scored_chunks.sort(key=lambda x: x['rerank_score'], reverse=True)
+    
+    # Log reranking results
+    print(f"  Reranking complete. Top chunk scores:")
+    for i, chunk in enumerate(scored_chunks[:3]):
+        meta = chunk.get('metadata', {})
+        print(f"    [{i+1}] Score: {chunk['rerank_score']:.3f} | "
+              f"Tokens: {meta.get('token_count', 0)} | "
+              f"NumDensity: {meta.get('number_density', 0):.1f}% | "
+              f"Distance: {chunk.get('distance', 0):.3f}")
+    
+    return scored_chunks[:top_k]
+
+
 class RAGPipeline:
     """
     Complete RAG pipeline for indexing budget documents.
@@ -381,12 +491,13 @@ class RAGPipeline:
             else:
                 where_filter["scheme"] = scheme_filter
         
-        # Query the vector store
-        print(f"Retrieving top-{top_k} chunks from vector store...")
+        # Retrieve more candidates for reranking (2x top_k)
+        retrieval_count = top_k * 2
+        print(f"Retrieving top-{retrieval_count} candidates for reranking...")
         
         query_params = {
             "query_embeddings": [query_embedding],
-            "n_results": top_k
+            "n_results": retrieval_count
         }
         
         # Add where filter if any filters are specified
@@ -433,6 +544,16 @@ class RAGPipeline:
         if not retrieved_chunks:
             print("No relevant chunks found.")
             return []
+        
+        # ---------------------------------------------------------
+        # Rerank chunks by content quality (token count, number density)
+        # ---------------------------------------------------------
+        print("Reranking chunks by content quality...")
+        retrieved_chunks = rerank_chunks_by_content_quality(
+            chunks=retrieved_chunks,
+            query=query,
+            top_k=top_k
+        )
 
         # ---------------------------------------------------------
         # Context Expansion: Fetch Neighbor Chunks
@@ -457,14 +578,6 @@ class RAGPipeline:
                 neighbor_ids_to_fetch.add(prev_id)
                 neighbor_ids_to_fetch.add(next_id)
         
-        # Remove IDs we already have in retrieved_chunks
-        existing_ids = {c['metadata'].get('id', '') for c in retrieved_chunks} # We need to ensure ID is in metadata
-        # Actually, we didn't store ID in metadata explicitly in index_documents? 
-        # Wait, Chroma stores ID separately. But we added 'id' to chunk dict in pdf_processor.
-        # Let's hope format_metadata_for_storage includes it or we can infer it.
-        # In pdf_processor, we added 'id' to chunk dict, but format_metadata_for_storage might strictly filter?
-        # Let's check format_metadata_for_storage later. For now, assume we can fetch all potential neighbors.
-        
         if neighbor_ids_to_fetch:
             try:
                 # Batch fetch from Chroma
@@ -472,10 +585,8 @@ class RAGPipeline:
                     ids=list(neighbor_ids_to_fetch)
                 )
                 
-                # neighbor_results keys: ids, embeddings, metadatas, documents
                 if neighbor_results and neighbor_results['ids']:
                     for i, nid in enumerate(neighbor_results['ids']):
-                        # Check validity (sometimes get returns empty placeholders?)
                         if neighbor_results['documents'][i]:
                             chunk_map[nid] = {
                                 'text': neighbor_results['documents'][i],
@@ -486,29 +597,19 @@ class RAGPipeline:
                 print(f"Error fetching neighbors: {e}")
         
         # Now merge neighbors into retrieved chunks
-        # structure: for each main chunk, prepend prev and append next if they exist
         final_chunks = []
-        processed_ids = set()
         
         for chunk in retrieved_chunks:
-            # Reconstruct its ID (or hope it's in metadata)
-            # Safe way: retrieve it from metadata if we stored it, or reconstruct
             meta = chunk['metadata']
             doc_name = meta.get('document_name')
             c_idx = meta.get('chunk_index')
             
             if doc_name is not None and c_idx is not None:
-                current_id = f"{doc_name}_chunk_{c_idx}"
-                
                 # Check for Previous Neighbor
                 prev_id = f"{doc_name}_chunk_{c_idx - 1}"
                 if prev_id in chunk_map:
                     prev_chunk = chunk_map[prev_id]
-                    # Only add if not already a main result (to avoid dupes, though context Window might benefit)
-                    # Simple approach: Merge text
                     chunk['text'] = f"{prev_chunk['text']}\n\n{chunk['text']}"
-                    # Update metadata to show it includes previous content?
-                    # Maybe just keep metadata of main chunk
                 
                 # Check for Next Neighbor
                 next_id = f"{doc_name}_chunk_{c_idx + 1}"

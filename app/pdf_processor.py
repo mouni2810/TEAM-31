@@ -14,6 +14,88 @@ import re
 from pathlib import Path
 from typing import List, Dict, Tuple
 import fitz  # PyMuPDF
+import tiktoken
+
+
+class TokenChunker:
+    """
+    Token-based text chunker using tiktoken.
+    
+    Token-based chunking is preferred over character-based because:
+    - Matches embedding model context windows
+    - Consistent across languages/encodings
+    - Better semantic boundaries
+    """
+    
+    def __init__(self, model_name: str = "cl100k_base"):
+        """
+        Initialize the token chunker.
+        
+        Args:
+            model_name: Tiktoken encoding name. 
+                       "cl100k_base" is used by text-embedding-ada-002 and GPT-4
+        """
+        self.encoding = tiktoken.get_encoding(model_name)
+    
+    def count_tokens(self, text: str) -> int:
+        """Count tokens in text."""
+        return len(self.encoding.encode(text))
+    
+    def split_into_chunks(
+        self, 
+        text: str, 
+        chunk_size: int = 300, 
+        overlap: int = 75
+    ) -> List[str]:
+        """
+        Split text into overlapping chunks based on token count.
+        
+        Args:
+            text: Text to split
+            chunk_size: Target tokens per chunk (default: 300)
+            overlap: Token overlap between chunks (default: 75)
+            
+        Returns:
+            List of text chunks
+        """
+        tokens = self.encoding.encode(text)
+        
+        if len(tokens) <= chunk_size:
+            return [text] if text.strip() else []
+        
+        chunks = []
+        start = 0
+        
+        while start < len(tokens):
+            end = min(start + chunk_size, len(tokens))
+            
+            # Decode the token slice back to text
+            chunk_tokens = tokens[start:end]
+            chunk_text = self.encoding.decode(chunk_tokens).strip()
+            
+            if chunk_text:
+                chunks.append(chunk_text)
+            
+            # Move forward by (chunk_size - overlap) tokens
+            start += chunk_size - overlap
+            
+            # Prevent infinite loop if overlap >= chunk_size
+            if start <= (end - chunk_size + overlap) and start < len(tokens):
+                start = end - overlap
+        
+        return chunks
+
+
+# Global token chunker instance (lazy initialization)
+_token_chunker: TokenChunker = None
+
+
+def _get_token_chunker() -> TokenChunker:
+    """Get or create the global token chunker instance."""
+    global _token_chunker
+    if _token_chunker is None:
+        _token_chunker = TokenChunker()
+    return _token_chunker
 
 
 class PDFProcessor:
@@ -172,14 +254,15 @@ def extract_text_from_single_pdf(pdf_path: str) -> List[Dict[str, any]]:
 def chunk_text_with_metadata(
     pages_data: List[Dict[str, any]],
     metadata: Dict[str, str],
-    chunk_size: int = 1000,
-    overlap: int = 200
+    chunk_size: int = 300,
+    overlap: int = 75
 ) -> List[Dict[str, any]]:
     """
     Chunk extracted text into smaller segments with complete metadata.
     
-    This function splits page-level text into chunks of 800-1200 characters
-    with 200-character overlap to preserve context across chunk boundaries.
+    This function splits page-level text into chunks of ~300 tokens
+    with 75-token overlap to preserve context across chunk boundaries.
+    Uses tiktoken for accurate token counting that matches embedding models.
     
     All metadata is passed in directly (not extracted from content) to ensure
     every chunk has complete and consistent metadata.
@@ -193,8 +276,8 @@ def chunk_text_with_metadata(
                   - budget_category: Category (e.g., "Expenditure Budget")
                   - state: State/Central (e.g., "Central")
                   - document_type: Document type (e.g., "Demands for Grants")
-        chunk_size: Target chunk size in characters (default: 1000)
-        overlap: Overlap size in characters (default: 200)
+        chunk_size: Target chunk size in tokens (default: 300)
+        overlap: Overlap size in tokens (default: 75)
         
     Returns:
         List of chunk dictionaries with complete metadata:
@@ -212,8 +295,7 @@ def chunk_text_with_metadata(
         ]
     """
     chunks = []
-    
-    chunks = []
+    chunker = _get_token_chunker()
     
     # Global chunk index for the entire document (to allow sequential retrieval)
     doc_chunk_index = 0
@@ -227,8 +309,8 @@ def chunk_text_with_metadata(
         if not page_text.strip():
             continue
         
-        # Split text into chunks with overlap
-        page_chunks = _split_text_into_chunks(page_text, chunk_size, overlap)
+        # Split text into chunks with overlap (token-based)
+        page_chunks = chunker.split_into_chunks(page_text, chunk_size, overlap)
         
         # Enrich each chunk with complete metadata
         for chunk_text in page_chunks:
@@ -254,46 +336,22 @@ def chunk_text_with_metadata(
     return chunks
 
 
-def _split_text_into_chunks(text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
+def _split_text_into_chunks(
+    text: str, 
+    chunk_size: int = 300, 
+    overlap: int = 75
+) -> List[str]:
     """
-    Split text into overlapping chunks.
+    Split text into overlapping chunks using token-based splitting.
     
     Args:
         text: Text to split
-        chunk_size: Target size for each chunk (default: 1000 characters)
-        overlap: Number of characters to overlap between chunks (default: 200)
+        chunk_size: Target size for each chunk in tokens (default: 300)
+        overlap: Number of tokens to overlap between chunks (default: 75)
         
     Returns:
         List of text chunks
     """
-    chunks = []
-    start = 0
-    text_length = len(text)
-    
-    while start < text_length:
-        # Calculate end position
-        end = start + chunk_size
-        
-        # If this is not the last chunk, try to break at sentence or word boundary
-        if end < text_length:
-            # Look for sentence boundary (., !, ?) within last 100 chars
-            sentence_break = text.rfind('.', start, end)
-            if sentence_break > start + (chunk_size * 0.5):
-                end = sentence_break + 1
-            else:
-                # Fall back to word boundary
-                word_break = text.rfind(' ', start, end)
-                if word_break > start:
-                    end = word_break
-        
-        # Extract chunk
-        chunk = text[start:end].strip()
-        
-        if chunk:
-            chunks.append(chunk)
-        
-        # Move start position with overlap
-        start = end - overlap if end < text_length else text_length
-    
-    return chunks
+    chunker = _get_token_chunker()
+    return chunker.split_into_chunks(text, chunk_size, overlap)
 

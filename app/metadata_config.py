@@ -55,11 +55,11 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
     # Add your actual PDF files below:
     "Annual Report 2024-25 (English).pdf": {
         "year": "2024-25",
-        "ministry": "Ministry of Finance",
+        "ministry": "NITI Aayog",
         "scheme": "General",
         "budget_category": "Annual Report",
         "state": "Central",
-        "document_type": "Annual Report"
+        "document_type": "NITI Aayog Annual Report"
     },
     "Annual_Report_2021_2022_(English).pdf": {
         "year": "2021-22",
@@ -78,7 +78,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Annual Report"
     },
     "Annual-Report2020-2021-(English).pdf": {
-        "year": "2023-24",
+        "year": "2020-21",
         "ministry": "Ministry of Finance",
         "scheme": "General",
         "budget_category": "Annual Report",
@@ -142,7 +142,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Constitution of India"
     },
     "Fiscal_Health_Index_24012025_Final.pdf": {
-        "year": "2024-2025",
+        "year": "2024-25",
         "ministry": "Ministry of Finance",
         "scheme": "General",
         "budget_category": "Fiscal Health Index",   

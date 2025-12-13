@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,10 +8,11 @@
   <title>GovInsight - Budget Query System</title>
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
+
 <body>
   <!-- Main Container -->
   <div class="container">
-    
+
     <!-- Header -->
     <header class="header">
       <div class="logo">
@@ -24,63 +26,12 @@
     <section class="query-section">
       <div class="card">
         <h2 class="section-title">Ask a Question</h2>
-        
+
         <!-- Query Input -->
         <div class="input-group">
           <label for="queryInput" class="input-label">Your Query</label>
-          <textarea 
-            id="queryInput" 
-            class="textarea" 
-            placeholder="E.g., What is the budget allocation for education in 2024-25?"
-            rows="3"
-          ></textarea>
-        </div>
-
-        <!-- Advanced Filters -->
-        <div class="input-group">
-          <label class="input-label">Filters (Optional)</label>
-          <div class="filters">
-            <div>
-              <select id="yearFilter" class="select">
-                <option value="">All Years</option>
-                <option value="2025-26">2025-26</option>
-                <option value="2024-25">2024-25</option>
-                <option value="2023-24">2023-24</option>
-                <option value="2022-23">2022-23</option>
-                <option value="2021-22">2021-22</option>
-                <option value="2020-21">2020-21</option>
-              </select>
-            </div>
-            
-            <div>
-              <select id="ministryFilter" class="select">
-                <option value="">All Ministries</option>
-                <option value="Ministry of Finance">Finance</option>
-                <option value="Ministry of Education">Education</option>
-                <option value="Ministry of Health">Health</option>
-                <option value="Ministry of Defence">Defence</option>
-                <option value="Ministry of Road Transport">Road Transport</option>
-                <option value="Ministry of Women and Child Development">Women & Child Dev</option>
-              </select>
-            </div>
-            
-            <div>
-              <select id="schemeFilter" class="select">
-                <option value="">All Schemes</option>
-                <option value="Beti Bachao Beti Padhao">Beti Bachao</option>
-                <option value="Naari Shakti">Naari Shakti</option>
-              </select>
-            </div>
-            
-            <div>
-              <select id="topKInput" class="select">
-                <option value="3">Top 3 Results</option>
-                <option value="5" selected>Top 5 Results</option>
-                <option value="7">Top 7 Results</option>
-                <option value="10">Top 10 Results</option>
-              </select>
-            </div>
-          </div>
+          <textarea id="queryInput" class="textarea"
+            placeholder="E.g., What is the budget allocation for education in 2024-25?" rows="3"></textarea>
         </div>
 
         <!-- Submit Button -->
@@ -92,7 +43,7 @@
 
     <!-- Results Section -->
     <section id="resultsSection" class="results-section hidden">
-      
+
       <!-- Loading State -->
       <div id="loadingState" class="card loading hidden">
         <div class="loading-spinner"></div>
@@ -121,7 +72,7 @@
         <div class="answer-content">
           <!-- Dynamic content will be inserted here -->
         </div>
-        
+
         <!-- Sources -->
         <div id="sourcesContainer" class="sources">
           <!-- Dynamic sources will be inserted here -->
@@ -135,4 +86,5 @@
   <!-- JavaScript -->
   <script src="/static/js/app.js"></script>
 </body>
+
 </html>

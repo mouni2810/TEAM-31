@@ -4,17 +4,8 @@
 const API_BASE_URL = 'http://127.0.0.1:8000';
 
 // DOM Elements
-let queryInput, yearFilter, ministryFilter, schemeFilter, topKInput;
-let submitBtn, resultsSection, answerCard, sourcesContainer;
+let queryInput, submitBtn, resultsSection, answerCard, sourcesContainer;
 let loadingState, errorState, emptyState;
-
-// State
-let currentFilters = {
-    year: null,
-    ministry: null,
-    scheme: null,
-    top_k: 5
-};
 
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
@@ -26,10 +17,6 @@ document.addEventListener('DOMContentLoaded', () => {
 // Initialize DOM element references
 function initializeElements() {
     queryInput = document.getElementById('queryInput');
-    yearFilter = document.getElementById('yearFilter');
-    ministryFilter = document.getElementById('ministryFilter');
-    schemeFilter = document.getElementById('schemeFilter');
-    topKInput = document.getElementById('topKInput');
     submitBtn = document.getElementById('submitBtn');
     resultsSection = document.getElementById('resultsSection');
     answerCard = document.getElementById('answerCard');
@@ -50,23 +37,6 @@ function attachEventListeners() {
             e.preventDefault();
             handleSubmit();
         }
-    });
-
-    // Filter changes
-    yearFilter.addEventListener('change', (e) => {
-        currentFilters.year = e.target.value || null;
-    });
-
-    ministryFilter.addEventListener('change', (e) => {
-        currentFilters.ministry = e.target.value || null;
-    });
-
-    schemeFilter.addEventListener('change', (e) => {
-        currentFilters.scheme = e.target.value || null;
-    });
-
-    topKInput.addEventListener('change', (e) => {
-        currentFilters.top_k = parseInt(e.target.value) || 5;
     });
 }
 
@@ -102,20 +72,9 @@ async function handleSubmit() {
         query: query,
         temperature: 0.1,
         filters: {
-            top_k: currentFilters.top_k
+            top_k: 5
         }
     };
-
-    // Add filters if they're set
-    if (currentFilters.year) {
-        payload.filters.year = currentFilters.year;
-    }
-    if (currentFilters.ministry) {
-        payload.filters.ministry = currentFilters.ministry;
-    }
-    if (currentFilters.scheme) {
-        payload.filters.scheme = currentFilters.scheme;
-    }
 
     try {
         // Make API request
