@@ -247,3 +247,112 @@ def extract_text_from_single_pdf(pdf_path: str) -> List[Dict[str, any]]:
     processor = PDFProcessor()
     return processor.extract_text_from_pdf(Path(pdf_path))
 
+
+def chunk_text_with_metadata(
+    pages_data: List[Dict[str, any]],
+    year: str,
+    ministry: str,
+    document_title: str,
+    scheme: str = None,
+    chunk_size: int = 400,
+    overlap: int = 50
+) -> List[Dict[str, any]]:
+    """
+    Chunk extracted text into smaller segments with metadata enrichment.
+    
+    This function splits page-level text into chunks of 300-500 characters
+    with 50-character overlap to preserve context across chunk boundaries.
+    
+    Args:
+        pages_data: List of page dictionaries from PDF extraction
+        year: Budget year (e.g., "2023-24")
+        ministry: Ministry name (e.g., "Ministry of Road Transport & Highways")
+        document_title: Title of source document
+        scheme: Optional scheme name (e.g., "Bharatmala Pariyojana")
+        chunk_size: Target chunk size in characters (default: 400)
+        overlap: Overlap size in characters (default: 50)
+        
+    Returns:
+        List of chunk dictionaries with metadata:
+        [
+            {
+                'text': str,
+                'year': str,
+                'ministry': str,
+                'scheme': str or None,
+                'page_number': int,
+                'document_title': str
+            }
+        ]
+    """
+    chunks = []
+    
+    for page_data in pages_data:
+        page_text = page_data.get('text', '')
+        page_number = page_data.get('page_number', 0)
+        
+        # Skip empty pages
+        if not page_text.strip():
+            continue
+        
+        # Split text into chunks with overlap
+        page_chunks = _split_text_into_chunks(page_text, chunk_size, overlap)
+        
+        # Enrich each chunk with metadata
+        for chunk_text in page_chunks:
+            chunk = {
+                'text': chunk_text,
+                'year': year,
+                'ministry': ministry,
+                'scheme': scheme,
+                'page_number': page_number,
+                'document_title': document_title
+            }
+            chunks.append(chunk)
+    
+    return chunks
+
+
+def _split_text_into_chunks(text: str, chunk_size: int = 400, overlap: int = 50) -> List[str]:
+    """
+    Split text into overlapping chunks.
+    
+    Args:
+        text: Text to split
+        chunk_size: Target size for each chunk (default: 400 characters)
+        overlap: Number of characters to overlap between chunks (default: 50)
+        
+    Returns:
+        List of text chunks
+    """
+    chunks = []
+    start = 0
+    text_length = len(text)
+    
+    while start < text_length:
+        # Calculate end position
+        end = start + chunk_size
+        
+        # If this is not the last chunk, try to break at sentence or word boundary
+        if end < text_length:
+            # Look for sentence boundary (., !, ?) within last 100 chars
+            sentence_break = text.rfind('.', start, end)
+            if sentence_break > start + (chunk_size * 0.5):
+                end = sentence_break + 1
+            else:
+                # Fall back to word boundary
+                word_break = text.rfind(' ', start, end)
+                if word_break > start:
+                    end = word_break
+        
+        # Extract chunk
+        chunk = text[start:end].strip()
+        
+        if chunk:
+            chunks.append(chunk)
+        
+        # Move start position with overlap
+        start = end - overlap if end < text_length else text_length
+    
+    return chunks
+
