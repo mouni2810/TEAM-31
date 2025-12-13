@@ -10,17 +10,31 @@ This module orchestrates the complete RAG pipeline:
 """
 
 import os
+import sys
 import argparse
 from pathlib import Path
 from typing import List, Dict, Optional
 
-from pdf_processor import PDFProcessor, chunk_text_with_metadata
-from utils import (
-    initialize_vector_store,
-    initialize_embeddings,
-    embed_chunks,
-    format_metadata_for_storage
-)
+# Add parent directory to path for imports when run directly
+if __name__ == "__main__":
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+
+try:
+    from app.pdf_processor import PDFProcessor, chunk_text_with_metadata
+    from app.utils import (
+        initialize_vector_store,
+        initialize_embeddings,
+        embed_chunks,
+        format_metadata_for_storage
+    )
+except ModuleNotFoundError:
+    from pdf_processor import PDFProcessor, chunk_text_with_metadata
+    from utils import (
+        initialize_vector_store,
+        initialize_embeddings,
+        embed_chunks,
+        format_metadata_for_storage
+    )
 
 
 # System prompt template for Gemini-2.5-Flash
@@ -75,7 +89,7 @@ class RAGPipeline:
         self,
         pdf_directory: str = "data/raw_pdfs",
         vectorstore_directory: str = "vectorstore",
-        embedding_model_type: str = "gemini"
+        embedding_model_type: str = "huggingface"
     ):
         """
         Initialize RAG pipeline.
@@ -83,7 +97,7 @@ class RAGPipeline:
         Args:
             pdf_directory: Directory containing PDF files
             vectorstore_directory: Directory for vector store persistence
-            embedding_model_type: Type of embedding model ("gemini" or "huggingface")
+            embedding_model_type: Type of embedding model ("huggingface")
         """
         self.pdf_directory = pdf_directory
         self.vectorstore_directory = vectorstore_directory
@@ -408,7 +422,7 @@ class RAGPipeline:
 def index_pdfs_cli(
     pdf_directory: str = "data/raw_pdfs",
     vectorstore_directory: str = "vectorstore",
-    embedding_model: str = "gemini",
+    embedding_model: str = "huggingface",
     reset: bool = False
 ) -> None:
     """
@@ -436,7 +450,7 @@ def query_rag(
     ministry: Optional[str] = None,
     scheme: Optional[str] = None,
     vectorstore_directory: str = "vectorstore",
-    embedding_model: str = "gemini"
+    embedding_model: str = "huggingface"
 ) -> List[Dict]:
     """
     Query the RAG system for relevant budget information.
@@ -476,7 +490,7 @@ def complete_query(
     ministry: Optional[str] = None,
     scheme: Optional[str] = None,
     vectorstore_directory: str = "vectorstore",
-    embedding_model: str = "gemini",
+    embedding_model: str = "huggingface",
     temperature: float = 0.1
 ) -> Dict:
     """
@@ -552,9 +566,8 @@ def main():
     parser.add_argument(
         "--embedding-model",
         type=str,
-        default="gemini",
-        choices=["gemini", "huggingface"],
-        help="Embedding model type (default: gemini)"
+        default="huggingface",
+        help="Embedding model type (default: huggingface)"
     )
     
     parser.add_argument(

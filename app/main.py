@@ -6,6 +6,8 @@ Provides REST API endpoints for querying Indian budget documents.
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 import os
@@ -66,10 +68,33 @@ class QueryResponse(BaseModel):
     query: str = Field(..., description="Original query")
 
 
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
 # API endpoints
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    """Root endpoint with API information"""
+    """Serve the main UI"""
+    try:
+        with open("index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        # Fallback to API info if HTML not found
+        return """
+        <html>
+            <body>
+                <h1>GovInsight API</h1>
+                <p>Frontend not found. Please check if index.html exists.</p>
+                <p>API Documentation: <a href="/docs">/docs</a></p>
+            </body>
+        </html>
+        """
+
+
+@app.get("/api")
+async def api_info():
+    """API information endpoint"""
     return {
         "name": "GovInsight API",
         "version": "1.0.0",

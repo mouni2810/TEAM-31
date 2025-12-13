@@ -386,7 +386,7 @@ def initialize_embeddings(
 
 def embed_chunks(chunks: List[Dict], embedding_generator: EmbeddingGenerator) -> List[List[float]]:
     """
-    Generate embeddings for a list of text chunks.
+    Generate embeddings for a list of text chunks with batch processing.
     
     Args:
         chunks: List of chunk dictionaries containing 'text' field
@@ -399,10 +399,23 @@ def embed_chunks(chunks: List[Dict], embedding_generator: EmbeddingGenerator) ->
     
     print(f"Generating embeddings for {len(texts)} chunks...")
     
-    # Use batch embedding for efficiency
-    embeddings = embedding_generator.get_text_embedding_batch(texts)
+    # Use batch processing for better performance
+    batch_size = 500
+    all_embeddings = []
     
-    print(f"Generated {len(embeddings)} embeddings")
+    total_batches = (len(texts) + batch_size - 1) // batch_size
     
-    return embeddings
+    for i in range(0, len(texts), batch_size):
+        batch_num = (i // batch_size) + 1
+        batch_texts = texts[i:i + batch_size]
+        
+        print(f"  Processing batch {batch_num}/{total_batches} ({len(batch_texts)} chunks)...")
+        
+        # Generate embeddings for this batch
+        batch_embeddings = embedding_generator.get_text_embedding_batch(batch_texts)
+        all_embeddings.extend(batch_embeddings)
+    
+    print(f"Generated {len(all_embeddings)} embeddings")
+    
+    return all_embeddings
 

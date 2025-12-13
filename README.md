@@ -89,8 +89,8 @@ The system uses **only official, publicly available government PDFs**. No propri
 
 | Attribute | Value |
 |-----------|-------|
-| Total PDFs | 12–15 |
-| Years Covered | 2019–2024 (approximate) |
+| Total PDFs | 20-25 |
+| Years Covered | 2020–2025 (approximate) |
 | Primary Focus | Infrastructure, Roads, CapEx |
 | Dataset Size | Intentionally kept small for clean RAG performance |
 
@@ -116,8 +116,7 @@ Context Injection + Prompt Construction
 LLM Answer Generation (Gemini-2.5-Flash)
     ↓
 Response Formatting (Natural Language + Tables + Citations)
-    ↓
-Optional Visualization (matplotlib)
+
 ```
 
 ### Component Breakdown
@@ -127,7 +126,6 @@ Optional Visualization (matplotlib)
 3. **Chunk Retrieval**: Retrieved chunks include metadata (year, ministry, page number) for citation
 4. **LLM Generation**: Gemini-2.5-Flash generates a natural language answer using retrieved context
 5. **Response Formatting**: Answer includes year-wise tables, scheme breakdowns, and source citations
-6. **Visualization**: Optional matplotlib charts for trend analysis
 
 ---
 
@@ -142,13 +140,7 @@ Optional Visualization (matplotlib)
 | **Vector Database** | ChromaDB |
 | **PDF Parsing** | PyMuPDF (fitz) or pdfplumber |
 | **Backend API** | FastAPI (minimal REST endpoints) |
-| **Visualization** | matplotlib (optional) |
 
-### Explicitly NOT Included
-
-- ❌ OpenAI APIs
-- ❌ Jupyter notebooks (all code in `.py` files)
-- ❌ Frontend (CLI/API only for judging)
 
 ---
 
@@ -177,7 +169,6 @@ Optional Visualization (matplotlib)
     - Natural language summary
     - Year-wise or scheme-wise tables (Markdown format)
     - Citations with document name and page number
-11. **Visualization (Optional)**: Generate matplotlib charts for trend queries
 
 ### Example Metadata Structure
 
@@ -239,7 +230,6 @@ govinsight/
 | **Infrastructure Focus** | Specialized retrieval for roads, transport, and capital expenditure |
 | **Citation-backed Answers** | Every answer includes source document and page number |
 | **Missing Data Handling** | Gracefully returns "data not found" when information is unavailable |
-| **Trend Visualization** | Optional matplotlib charts for multi-year comparisons |
 | **Metadata Filtering** | Filter results by year, ministry, or scheme |
 
 ### Non-Features (Honest Scope)
@@ -256,7 +246,7 @@ govinsight/
 | Query | Expected Output |
 |-------|-----------------|
 | "How much did India allocate for road infrastructure in the last 5 years?" | Year-wise table with MoRTH allocations + citations |
-| "Capital expenditure trend in Union Budget" | Multi-year CapEx breakdown + optional line chart |
+| "Capital expenditure trend in Union Budget" | Multi-year CapEx breakdown|
 | "Which year had the highest transport budget allocation?" | Single year + amount + source citation |
 | "Compare Bharatmala and PMGSY allocations in 2023-24" | Scheme-wise comparison table |
 | "Total infrastructure spending in Budget 2024-25" | Aggregated value + sector breakdown |
@@ -345,8 +335,6 @@ print(result)
 
 ---
 
-## Evaluation Notes for Judges
-
 ### Strengths
 
 - **Reproducible**: All dependencies pinned, clear setup instructions
@@ -413,18 +401,23 @@ The current architecture supports:
 
 By requiring citations and gracefully handling missing data, GovInsight prioritizes accuracy over speculative answers. This makes it suitable for analysts, journalists, and researchers who need verifiable insights.
 
----
+### Output Example
 
-## Technical Support
-
-For questions or issues during evaluation, refer to:
-- System logs in `app/logs/` (auto-generated)
-- ChromaDB admin interface: `http://localhost:8000/admin` (if enabled)
-- Sample queries in `examples/` directory
-
----
-
-**Project Type**: GenAI Hackathon Submission  
-**Domain**: Public Finance & Policy Analysis  
-**Architecture**: RAG (Retrieval-Augmented Generation)  
-**Evaluation Priority**: Reproducibility, Technical Correctness, Citation Accuracy
+{
+  "answer": "The allocation for the Bharatmala Pariyojana in the 2023-24 budget is ₹10,000 Crore. [Document: Budget_2023-24, Page: 12]",
+  "sources": [
+    {
+      "document_title": "Budget_2023-24",
+      "page_number": 12,
+      "year": "2023-24",
+      "ministry": "Ministry of Road Transport and Highways"
+    },
+    {
+      "document_title": "Expenditure_Profile",
+      "page_number": 45,
+      "year": "2023-24",
+      "ministry": "Finance"
+    }
+  ],
+  "query": "What is the allocation for Bharatmala in 2023?"
+}
