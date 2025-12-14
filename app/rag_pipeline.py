@@ -491,8 +491,8 @@ class RAGPipeline:
             else:
                 where_filter["scheme"] = scheme_filter
         
-        # Retrieve more candidates for reranking (2x top_k)
-        retrieval_count = top_k * 2
+        # Retrieve slightly more candidates for reranking (top_k + 3)
+        retrieval_count = top_k + 3
         print(f"Retrieving top-{retrieval_count} candidates for reranking...")
         
         query_params = {
