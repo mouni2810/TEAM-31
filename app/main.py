@@ -7,11 +7,13 @@ Provides REST API endpoints for querying Indian budget documents.
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 import os
 import sys
+from pathlib import Path
+import urllib.parse
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,6 +38,10 @@ app.add_middleware(
 )
 
 
+# PDF directory path
+PDF_DIRECTORY = Path("data/raw_pdfs")
+
+
 # Request models
 class QueryFilters(BaseModel):
     """Optional filters for query"""
@@ -57,6 +63,7 @@ class SourceDocument(BaseModel):
     page_number: int
     year: str
     ministry: str
+    document_name: Optional[str] = Field("", description="PDF filename for download")
 
 
 class QueryResponse(BaseModel):
@@ -101,7 +108,8 @@ async def api_info():
         "endpoints": {
             "/query": "POST - Query budget documents",
             "/health": "GET - Health check",
-            "/docs": "GET - API documentation"
+            "/docs": "GET - API documentation",
+            "/download/{filename}": "GET - Download source PDF"
         }
     }
 
@@ -113,6 +121,42 @@ async def health_check():
         "status": "healthy",
         "service": "GovInsight"
     }
+
+
+@app.get("/download/{filename:path}")
+async def download_pdf(filename: str):
+    """
+    Download a source PDF file.
+    
+    Args:
+        filename: Name of the PDF file to download
+        
+    Returns:
+        FileResponse with the PDF file
+    """
+    # Decode URL-encoded filename
+    decoded_filename = urllib.parse.unquote(filename)
+    
+    # Security check: prevent directory traversal attacks
+    if ".." in decoded_filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    
+    # Construct the full path
+    pdf_path = PDF_DIRECTORY / decoded_filename
+    
+    # Check if file exists
+    if not pdf_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"PDF file not found: {decoded_filename}"
+        )
+    
+    # Return the file
+    return FileResponse(
+        path=str(pdf_path),
+        filename=decoded_filename,
+        media_type="application/pdf"
+    )
 
 
 @app.post("/query", response_model=QueryResponse)
@@ -180,11 +224,15 @@ async def query_documents(request: QueryRequest):
             if not ministry or ministry == '':
                 ministry = 'Unknown'
             
-            print(f"[DEBUG] Creating SourceDocument: page={page_num}, year={year}, ministry={ministry}")
+            # Get document_name from metadata (already configured in metadata_config.py)
+            document_name = source.get('document_name', '')
+            
+            print(f"[DEBUG] Creating SourceDocument: page={page_num}, year={year}, ministry={ministry}, doc={document_name}")
             sources.append(SourceDocument(
                 page_number=page_num,
                 year=str(year),
-                ministry=str(ministry)
+                ministry=str(ministry),
+                document_name=str(document_name) if document_name else ''
             ))
         
         # Return response

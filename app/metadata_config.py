@@ -54,6 +54,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
     #
     # Add your actual PDF files below:
     "Annual Report 2024-25 (English).pdf": {
+        "document_name": "Annual Report 2024-25 (English).pdf",
         "year": "2024-25",
         "ministry": "NITI Aayog",
         "scheme": "General",
@@ -62,6 +63,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "NITI Aayog Annual Report"
     },
     "Annual_Report_2021_2022_(English).pdf": {
+        "document_name": "Annual_Report_2021_2022_(English).pdf",
         "year": "2021-22",
         "ministry": "Ministry of Finance",
         "scheme": "General",
@@ -70,6 +72,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Annual Report"
     },
     "Annual-Report-2022-2023-(English).pdf": {
+        "document_name": "Annual-Report-2022-2023-(English).pdf",
         "year": "2022-23",
         "ministry": "Ministry of Finance",
         "scheme": "General",
@@ -78,6 +81,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Annual Report"
     },
     "Annual-Report2020-2021-(English).pdf": {
+        "document_name": "Annual-Report2020-2021-(English).pdf",
         "year": "2020-21",
         "ministry": "Ministry of Finance",
         "scheme": "General",
@@ -85,7 +89,8 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "state": "Central",
         "document_type": "Annual Report"
     },
-    "beti bacacho.pdf": {
+    "beti bacho.pdf": {
+        "document_name": "beti bacho.pdf",
         "year": "2024-25",
         "ministry": "Ministry of Women and Child Development",
         "scheme": "Beti Bachao Beti Padhao",
@@ -94,6 +99,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Scheme Document"
     },
     "budget_at_a_glance(2024-2025).pdf": {
+        "document_name": "budget_at_a_glance(2024-2025).pdf",
         "year": "2024-25",
         "ministry": "Ministry of Finance",
         "scheme": "General",
@@ -102,6 +108,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Budget at a Glance"
     },
     "Budget_Speech(2021-2022).pdf": {
+        "document_name": "Budget_Speech(2021-2022).pdf",
         "year": "2021-22",
         "ministry": "Ministry of Finance",
         "scheme": "General",
@@ -110,6 +117,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Budget Speech"
     },
     "budget_speech(2023-2024).pdf": {
+        "document_name": "budget_speech(2023-2024).pdf",
         "year": "2023-24",
         "ministry": "Ministry of Finance",
         "scheme": "General",
@@ -118,6 +126,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Budget Speech"
     },
     "budget_speech(2025-2026).pdf": {
+        "document_name": "budget_speech(2025-2026).pdf",
         "year": "2025-26",
         "ministry": "Ministry of Finance",
         "scheme": "General",
@@ -126,6 +135,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Budget Speech"
     },
     "child welfare focus.pdf": {
+        "document_name": "child welfare focus.pdf",
         "year": "2024-25",
         "ministry": "Ministry of Women and Child Development",
         "scheme": "Child Welfare",  
@@ -133,7 +143,8 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "state": "Central", 
         "document_type": "Scheme Document"
     },
-    "constitiution.pdf": {
+    "constitution.pdf": {
+        "document_name": "constitiution.pdf",
         "year": "2024-25",
         "ministry": "Ministry of Law and Justice",
         "scheme": "General",
@@ -142,6 +153,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Constitution of India"
     },
     "Fiscal_Health_Index_24012025_Final.pdf": {
+        "document_name": "Fiscal_Health_Index_24012025_Final.pdf",
         "year": "2024-25",
         "ministry": "Ministry of Finance",
         "scheme": "General",
@@ -150,6 +162,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Fiscal Health Index Report"
     },
     "lok sabha debates.pdf": {
+        "document_name": "lok sabha debates.pdf",
         "year": "2024-25",
         "ministry": "Lok Sabha",
         "scheme": "General",
@@ -158,6 +171,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Lok Sabha Debates"
     },
     "Naari Shakthi.pdf": {
+        "document_name": "Naari Shakthi.pdf",
         "year": "2024-25",
         "ministry": "Ministry of Women and Child Development",
         "scheme": "Naari Shakthi",
@@ -166,6 +180,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Scheme Document"
     },
     "National-Multidimentional-Poverty-Index-2023-Final-17th-July.pdf": {
+        "document_name": "National-Multidimentional-Poverty-Index-2023-Final-17th-July.pdf",
         "year": "2023",
         "ministry": "NITI Aayog",
         "scheme": "Poverty Alleviation",
@@ -175,6 +190,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
     
     },
     "prs (child and women development).pdf": {
+        "document_name": "prs (child and women development).pdf",
         "year": "2024-25",
         "ministry": "Ministry of Women and Child Development",
         "scheme": "General",
@@ -183,6 +199,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "PRS Report"
     },
     "rajya sabha.pdf": {
+        "document_name": "rajya sabha.pdf",
         "year": "2024-25",
         "ministry": "Rajya Sabha",
         "scheme": "General",
@@ -191,6 +208,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Rajya Sabha Debates"
     },
     "SDG_India_Index_2023-24.pdf": {
+        "document_name": "SDG_India_Index_2023-24.pdf",
         "year": "2023-24",
         "ministry": "NITI Aayog",
         "scheme": "Sustainable Development Goals",
@@ -200,6 +218,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "SDG India Index Report"
     },
     "SDG-NER-Report(2023-2024).pdf": {
+        "document_name": "SDG-NER-Report(2023-2024).pdf",
         "year": "2023-24",
         "ministry": "NITI Aayog",
         "scheme": "Sustainable Development Goals",
@@ -207,7 +226,8 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "state": "Central",
         "document_type": "SDG NER Report"
     },
-    "transprt(2024-2025).pdf": {
+    "transport(2024-2025).pdf": {
+        "document_name": "transport(2024-2025).pdf",
         "year": "2024-25",
         "ministry": "Ministry of Road Transport & Highways",
         "scheme": "Bharatmala Pariyojana",
@@ -216,6 +236,7 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "document_type": "Demands for Grants"
     },
     "women and child development (annual report).pdf": {
+        "document_name": "women and child development (annual report).pdf",
         "year": "2024-25",
         "ministry": "Ministry of Women and Child Development",
         "scheme": "General",

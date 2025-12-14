@@ -303,7 +303,9 @@ def chunk_text_with_metadata(
     for page_data in pages_data:
         page_text = page_data.get('text', '')
         page_number = page_data.get('page_number', 0)
-        document_name = page_data.get('document_name', 'unknown_doc')
+        # Use document_name from metadata (includes .pdf extension) if available,
+        # otherwise fall back to the one from page_data
+        document_name = metadata.get('document_name') or page_data.get('document_name', 'unknown_doc')
         
         # Skip empty pages
         if not page_text.strip():

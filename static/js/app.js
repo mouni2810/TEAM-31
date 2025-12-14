@@ -181,44 +181,80 @@ function formatAnswer(answer) {
     return formatted;
 }
 
-// Display sources
+// Display sources with download buttons
 function displaySources(sources, count) {
     if (!sources || sources.length === 0) {
         sourcesContainer.innerHTML = '<p class="text-muted">No sources available</p>';
         return;
     }
 
-    // Remove duplicates based on year, ministry, and page
+    // Remove duplicates based on year, ministry, page, and document_name
     const uniqueSources = [];
     const seen = new Set();
 
     sources.forEach(source => {
-        const key = `${source.year}-${source.ministry}-${source.page_number}`;
+        const key = `${source.year}-${source.ministry}-${source.page_number}-${source.document_name || ''}`;
         if (!seen.has(key)) {
             seen.add(key);
             uniqueSources.push(source);
         }
     });
 
-    const sourcesHTML = uniqueSources.map((source, index) => `
-    <div class="source-item">
-      <div class="source-title">📄 ${escapeHtml(source.ministry)} - ${escapeHtml(source.year)}</div>
-      <div class="source-meta">
-        <span class="source-meta-item">📖 Page ${escapeHtml(String(source.page_number))}</span>
-        <span class="source-meta-item">📅 ${escapeHtml(source.year)}</span>
-        <span class="source-meta-item">🏛️ ${escapeHtml(source.ministry)}</span>
-      </div>
-    </div>
-  `).join('');
+    const sourcesHTML = uniqueSources.map((source, index) => {
+        const hasDocument = source.document_name && source.document_name.trim() !== '';
+        const displayDocName = hasDocument 
+            ? (source.document_name.length > 35 
+                ? source.document_name.substring(0, 32) + '...' 
+                : source.document_name)
+            : `${source.ministry} - ${source.year}`;
+        
+        return `
+        <div class="source-item ${hasDocument ? 'source-clickable' : ''}" 
+             ${hasDocument ? `data-document="${escapeHtml(source.document_name)}" data-page="${source.page_number}"` : ''}
+             title="${hasDocument ? 'Click to download: ' + source.document_name : 'Document not available for download'}">
+            <div class="source-title">
+                📄 ${escapeHtml(displayDocName)}
+                ${hasDocument ? '<span class="download-icon">⬇️</span>' : ''}
+            </div>
+            <div class="source-meta">
+                <span class="source-meta-item">📖 Page ${escapeHtml(String(source.page_number))}</span>
+                <span class="source-meta-item">📅 ${escapeHtml(source.year)}</span>
+                <span class="source-meta-item">🏛️ ${escapeHtml(source.ministry)}</span>
+            </div>
+        </div>
+        `;
+    }).join('');
 
     sourcesContainer.innerHTML = `
-    <div class="sources-title">
-      📚 Sources (${uniqueSources.length})
-    </div>
-    <div class="sources-grid">
-      ${sourcesHTML}
-    </div>
-  `;
+        <div class="sources-title">📚 Sources (${uniqueSources.length}) - Click to download</div>
+        <div class="sources-grid">${sourcesHTML}</div>
+    `;
+    
+    // Attach click handlers for download
+    document.querySelectorAll('.source-item.source-clickable').forEach(item => {
+        item.addEventListener('click', function() {
+            const docName = this.getAttribute('data-document');
+            const pageNum = this.getAttribute('data-page');
+            if (docName) {
+                downloadSourcePDF(docName, pageNum);
+            }
+        });
+    });
+}
+
+// Download source PDF
+function downloadSourcePDF(documentName, pageNumber) {
+    const downloadUrl = `${API_BASE_URL}/download/${encodeURIComponent(documentName)}`;
+    console.log(`Downloading: ${documentName} (Page ${pageNumber})`);
+    
+    // Open in new tab or trigger download
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = documentName;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 }
 
 // Show error message

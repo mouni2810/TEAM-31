@@ -815,7 +815,8 @@ class RAGPipeline:
             sources.append({
                 'page_number': page_num,
                 'year': metadata.get('year', 'Unknown'),
-                'ministry': metadata.get('ministry', 'Unknown')
+                'ministry': metadata.get('ministry', 'Unknown'),
+                'document_name': metadata.get('document_name', '')
             })
         
         # Properly format context with separators between chunks
