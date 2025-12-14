@@ -244,11 +244,16 @@ DOCUMENT_METADATA: Dict[str, Dict[str, str]] = {
         "state": "Central",
         "document_type": "Annual Report"
     },
-
+    "women and child development-expenditure.pdf": {
+        "document_name": "women and child development-expenditure.pdf",
+        "year": "2024-25",
+        "ministry": "Ministry of Women and Child Development",
+        "scheme": "General",
+        "budget_category": "Expenditure",
+        "state": "Central",
+        "document_type": "Expenditure Report"
+    }
 }
-
-
-
 def get_metadata_for_document(filename: str) -> Dict[str, str]:
     """
     Get metadata for a specific PDF document.
