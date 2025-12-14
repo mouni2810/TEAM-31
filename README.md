@@ -136,7 +136,7 @@ Response Formatting (Natural Language + Tables + Citations)
 | **Language** | Python 3.10+ |
 | **RAG Framework** | LlamaIndex |
 | **LLM** | Gemini-2.5-Flash (Google) |
-| **Embeddings** | Gemini embeddings (or HuggingFace compatible model) |
+| **Embeddings** | LlamaIndex (HuggingFace compatible model) |
 | **Vector Database** | ChromaDB |
 | **PDF Parsing** | PyMuPDF (fitz) or pdfplumber |
 | **Backend API** | FastAPI (minimal REST endpoints) |
