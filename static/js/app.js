@@ -6,6 +6,7 @@ const API_BASE_URL = 'http://127.0.0.1:8000';
 // DOM Elements
 let queryInput, submitBtn, resultsSection, answerCard, sourcesContainer;
 let loadingState, errorState, emptyState;
+let queryStartTime;
 
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
@@ -37,6 +38,16 @@ function attachEventListeners() {
             e.preventDefault();
             handleSubmit();
         }
+    });
+
+    // Quick query buttons
+    document.querySelectorAll('.quick-query-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            queryInput.value = btn.getAttribute('data-query');
+            queryInput.focus();
+            // Auto-submit after a short delay
+            setTimeout(() => handleSubmit(), 150);
+        });
     });
 }
 
@@ -118,18 +129,34 @@ function showLoading() {
     errorState.classList.add('hidden');
     emptyState.classList.add('hidden');
 
-    // Disable submit button
+    // Disable submit button and show loading state
     submitBtn.disabled = true;
+    const btnText = submitBtn.querySelector('.btn-text');
+    const btnLoading = submitBtn.querySelector('.btn-loading');
+    if (btnText) btnText.classList.add('hidden');
+    if (btnLoading) btnLoading.classList.remove('hidden');
+    
+    // Record start time
+    queryStartTime = Date.now();
 }
 
 // Display results
 function displayResults(data) {
+    // Calculate response time
+    const responseTime = ((Date.now() - queryStartTime) / 1000).toFixed(1);
+    
     // Hide loading, show answer
     loadingState.classList.add('hidden');
     answerCard.classList.remove('hidden');
     errorState.classList.add('hidden');
     emptyState.classList.add('hidden');
+    
+    // Reset button state
     submitBtn.disabled = false;
+    const btnText = submitBtn.querySelector('.btn-text');
+    const btnLoading = submitBtn.querySelector('.btn-loading');
+    if (btnText) btnText.classList.remove('hidden');
+    if (btnLoading) btnLoading.classList.add('hidden');
 
     // Parse markdown-style answer for better display
     const formattedAnswer = formatAnswer(data.answer);
@@ -137,6 +164,12 @@ function displayResults(data) {
     // Display answer
     const answerContent = answerCard.querySelector('.answer-content');
     answerContent.innerHTML = formattedAnswer;
+
+    // Display response time
+    const responseTimeEl = document.getElementById('responseTime');
+    if (responseTimeEl) {
+        responseTimeEl.textContent = `⚡ ${responseTime}s`;
+    }
 
     // Display sources
     displaySources(data.sources, data.num_chunks_used);
@@ -264,11 +297,28 @@ function showError(message) {
     answerCard.classList.add('hidden');
     errorState.classList.remove('hidden');
     emptyState.classList.add('hidden');
+    
+    // Reset button state
     submitBtn.disabled = false;
+    const btnText = submitBtn.querySelector('.btn-text');
+    const btnLoading = submitBtn.querySelector('.btn-loading');
+    if (btnText) btnText.classList.remove('hidden');
+    if (btnLoading) btnLoading.classList.add('hidden');
 
-    const errorMessage = errorState.querySelector('.error-title');
-    if (errorMessage) {
-        errorMessage.textContent = message;
+    const errorTitle = errorState.querySelector('.error-title');
+    const errorDetails = errorState.querySelector('.error-details');
+    
+    if (errorTitle) {
+        errorTitle.textContent = message;
+    }
+    if (errorDetails) {
+        if (message.includes('not indexed')) {
+            errorDetails.textContent = 'Run: python app/rag_pipeline.py --index';
+        } else if (message.includes('Cannot connect')) {
+            errorDetails.textContent = 'Make sure the server is running on port 8000';
+        } else {
+            errorDetails.textContent = '';
+        }
     }
 }
 

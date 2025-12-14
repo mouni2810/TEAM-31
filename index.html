@@ -20,6 +20,11 @@
         <h1 class="logo-text">GovInsight</h1>
       </div>
       <p class="subtitle">AI-Powered Analysis of Indian Union Budget Documents</p>
+      <div class="header-badge">
+        <span class="badge">🔍 RAG-Powered</span>
+        <span class="badge">📊 Budget 2024-25</span>
+        <span class="badge">⚡ Fast Retrieval</span>
+      </div>
     </header>
 
     <!-- Query Section -->
@@ -34,9 +39,25 @@
             placeholder="E.g., What is the budget allocation for education in 2024-25?" rows="3"></textarea>
         </div>
 
+        <!-- Quick Example Queries -->
+        <div class="quick-queries">
+          <span class="quick-queries-label">Try:</span>
+          <button class="quick-query-btn"
+            data-query="What is the total budget allocation for Bharatmala project?">Bharatmala Budget</button>
+          <button class="quick-query-btn"
+            data-query="What are the major schemes under Ministry of Road Transport and Highways?">Road Transport
+            Schemes</button>
+          <button class="quick-query-btn" data-query="What is the expenditure on women and child development?">Women &
+            Child Dev</button>
+        </div>
+
         <!-- Submit Button -->
         <button id="submitBtn" class="btn btn-full">
-          <span>🔍 Search Budget Documents</span>
+          <span class="btn-text">🔍 Search Budget Documents</span>
+          <span class="btn-loading hidden">
+            <span class="spinner"></span>
+            Searching...
+          </span>
         </button>
       </div>
     </section>
@@ -48,12 +69,14 @@
       <div id="loadingState" class="card loading hidden">
         <div class="loading-spinner"></div>
         <p class="loading-text">Searching budget documents...</p>
+        <p class="loading-subtext">Analyzing sources and generating response</p>
       </div>
 
       <!-- Error State -->
       <div id="errorState" class="error-message hidden">
         <div class="error-icon">⚠️</div>
         <div class="error-title">Error occurred</div>
+        <p class="error-details"></p>
       </div>
 
       <!-- Empty State -->
@@ -68,6 +91,7 @@
         <div class="answer-header">
           <div class="answer-icon">💡</div>
           <h3 class="answer-title">Answer</h3>
+          <span id="responseTime" class="response-time"></span>
         </div>
         <div class="answer-content">
           <!-- Dynamic content will be inserted here -->
@@ -80,6 +104,7 @@
       </div>
 
     </section>
+
 
   </div>
 
